@@ -1,0 +1,15 @@
+[Unit]
+Description=Weinkuehlungssteuerung (Temperaturueberwachung + Relaissteuerung)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/kuehlungssteuerung
+ExecStart=/usr/bin/python3 /home/pi/kuehlungssteuerung/kuehlungssteuerung.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
