@@ -9,7 +9,8 @@ User=pi
 WorkingDirectory=/home/pi/kuehlungssteuerung
 # Zugangsdaten (Token, ggf. SMTP-Passwort) aus einer nicht eingecheckten Datei laden.
 # Das fuehrende "-" macht die Datei optional (Start schlaegt nicht fehl, wenn sie fehlt).
-EnvironmentFile=-/etc/kuehlungssteuerung.env
+# Achtung: myenv liegt im Repo-Verzeichnis und ist per .gitignore vom Git ausgeschlossen.
+EnvironmentFile=-/home/pi/kuehlungssteuerung/myenv
 ExecStart=/usr/bin/python3 /home/pi/kuehlungssteuerung/kuehlungssteuerung.py
 Restart=on-failure
 RestartSec=10

@@ -1,0 +1,11 @@
+# Zugangsdaten / Secrets - NIEMALS committen
+myenv
+*.env
+
+# Laufzeitdaten und Logs (entstehen im Repo-Verzeichnis auf dem Pi)
+daten/
+*.log
+
+# Python
+__pycache__/
+*.pyc
