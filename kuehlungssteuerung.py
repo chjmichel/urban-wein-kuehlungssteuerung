@@ -299,8 +299,11 @@ class CsvLogger:
 # E-Mail-Versand
 # --------------------------------------------------------------------------- #
 
-def sende_status_email(csv_logger: CsvLogger, messwerte_letzte_stunde: list) -> None:
-    """Verschickt eine Zusammenfassung der letzten Stunde inkl. aktueller CSV als Anhang."""
+def sende_status_email(csv_logger: CsvLogger, messwerte_letzte_stunde: list) -> bool:
+    """Verschickt eine Zusammenfassung der letzten Stunde inkl. aktueller CSV als Anhang.
+
+    Gibt True zurueck, wenn die E-Mail versendet wurde, sonst False (z.B. bei WLAN-Verlust).
+    """
     if not messwerte_letzte_stunde:
         zusammenfassung = "Keine gueltigen Messwerte in der letzten Stunde verfuegbar."
     else:
@@ -351,8 +354,10 @@ def sende_status_email(csv_logger: CsvLogger, messwerte_letzte_stunde: list) -> 
             server.login(SMTP_LOGIN, SMTP_PASSWORT)
             server.sendmail(EMAIL_ABSENDER, EMAIL_EMPFAENGER, nachricht.as_string())
         logger.info("Status-E-Mail erfolgreich versendet")
+        return True
     except (smtplib.SMTPException, OSError, TimeoutError) as exc:
         logger.error("E-Mail-Versand fehlgeschlagen (z.B. WLAN-Verlust): %s", exc)
+        return False
 
 
 # --------------------------------------------------------------------------- #
@@ -403,7 +408,7 @@ def sende_an_tago(temp1: Optional[float], temp2: Optional[float],
             headers={"Device-Token": TAGO_DEVICE_TOKEN, "Content-Type": "application/json"},
             timeout=TAGO_TIMEOUT_SEK,
         )
-        if antwort.status_code == 202:
+        if 200 <= antwort.status_code < 300:
             logger.info("Tago-Push erfolgreich (%d Variablen)", len(nutzlast))
         else:
             logger.error("Tago-Push fehlgeschlagen: HTTP %s - %s", antwort.status_code, antwort.text[:200])
@@ -602,11 +607,15 @@ def main() -> None:
                     logger.error("Unerwarteter Fehler beim Tago-Push: %s", exc)
 
             if email_timer.faellig():
+                erfolg = False
                 try:
-                    sende_status_email(csv_logger, stunden_puffer)
+                    erfolg = sende_status_email(csv_logger, stunden_puffer)
                 except Exception as exc:
                     logger.error("Unerwarteter Fehler beim E-Mail-Versand: %s", exc)
-                stunden_puffer = []
+                # Puffer nur leeren, wenn die E-Mail wirklich raus ist – sonst gingen die
+                # Messwerte der letzten Stunde bei WLAN-Verlust verloren.
+                if erfolg:
+                    stunden_puffer = []
 
             # Bis zum naechsten Messzyklus warten. Es wird nur die Restzeit geschlafen,
             # damit die tatsaechliche Auslesefrequenz nahe an MESS_INTERVALL_SEK bleibt.
