@@ -93,7 +93,7 @@ EMAIL_BETREFF_PREFIX = "Weinkuehlung Status"
 TAGO_AKTIV = True                       # auf False setzen, um den Push abzuschalten
 TAGO_API_URL = "https://api.tago.io/data"
 # Token NICHT im Code speichern: aus der Umgebungsvariable TAGO_DEVICE_TOKEN laden.
-# Auf dem Pi wird sie ueber /home/pi/kuehlungssteuerung/myenv gesetzt (siehe systemd-Unit),
+# Auf dem Pi wird sie ueber /etc/kuehlungssteuerung.env gesetzt (siehe systemd-Unit),
 # lokal zum Testen z.B. mit: export TAGO_DEVICE_TOKEN="..."
 TAGO_DEVICE_TOKEN = os.environ.get("TAGO_DEVICE_TOKEN", "changeme")
 TAGO_PUSH_INTERVALL_SEK = 5 * 60        # wie oft an Tago gesendet wird (5 Minuten)
