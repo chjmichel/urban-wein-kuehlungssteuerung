@@ -526,7 +526,10 @@ def main() -> None:
     csv_logger = CsvLogger(DATEN_VERZEICHNIS, CSV_DATEINAME_PREFIX, CSV_ROTATIONS_TAGE)
 
     stunden_puffer: list = []  # Messwerte seit der letzten E-Mail, fuer die Zusammenfassung
-    erster_durchlauf = True    # beim Start einen definierten Relaiszustand setzen (siehe relais_logik_anwenden)
+    # Startzustand je Sensor getrennt setzen: ein dauerhaft defekter Sensor darf den
+    # anderen (funktionierenden) Kanal nicht im hysteresefreien Startmodus festhalten.
+    erster_durchlauf_1 = True
+    erster_durchlauf_2 = True
 
     # Schwellwerte zur Laufzeit halten (Startwerte aus CONFIG). Werden ggf. per
     # Tago.io-Fernsteuerung aktualisiert, ohne das Programm neu zu starten.
@@ -542,7 +545,9 @@ def main() -> None:
     sollwert_timer = Intervall(TAGO_SOLLWERT_INTERVALL_SEK)
     csv_timer = Intervall(CSV_SCHREIB_INTERVALL_SEK)
     tago_push_timer = Intervall(TAGO_PUSH_INTERVALL_SEK)
-    email_timer = Intervall(EMAIL_INTERVALL_SEK)
+    # E-Mail bewusst NICHT sofort beim Start senden: sonst kaeme nach jedem
+    # (Neu-)Start eine Zusammenfassung mit nur einem Messpunkt.
+    email_timer = Intervall(EMAIL_INTERVALL_SEK, sofort_faellig=False)
 
     try:
         while True:
@@ -564,11 +569,14 @@ def main() -> None:
                     logger.error("Unerwarteter Fehler beim Sollwert-Abruf: %s", exc)
 
             try:
-                relais_logik_anwenden(temp1, relais1, schwellen["an1"], schwellen["aus1"], initial=erster_durchlauf)
-                relais_logik_anwenden(temp2, relais2, schwellen["an2"], schwellen["aus2"], initial=erster_durchlauf)
-                # Startzustand gilt als gesetzt, sobald beide Sensoren einen gueltigen Wert lieferten.
-                if erster_durchlauf and temp1 is not None and temp2 is not None:
-                    erster_durchlauf = False
+                relais_logik_anwenden(temp1, relais1, schwellen["an1"], schwellen["aus1"], initial=erster_durchlauf_1)
+                relais_logik_anwenden(temp2, relais2, schwellen["an2"], schwellen["aus2"], initial=erster_durchlauf_2)
+                # Startzustand je Sensor als gesetzt markieren, sobald dieser Sensor einen
+                # gueltigen Wert geliefert hat (nur dann hat relais_logik_anwenden ihn angewendet).
+                if erster_durchlauf_1 and temp1 is not None:
+                    erster_durchlauf_1 = False
+                if erster_durchlauf_2 and temp2 is not None:
+                    erster_durchlauf_2 = False
             except Exception as exc:
                 logger.error("Unerwarteter Fehler in der Relaislogik: %s", exc)
 
