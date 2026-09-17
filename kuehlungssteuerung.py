@@ -2,19 +2,22 @@
 """
 Weinkuehlungssteuerung fuer Raspberry Pi Zero W (ARMv6, Raspberry Pi OS Bullseye/Bookworm Lite).
 
-Liest zyklisch zwei DS18B20 1-Wire Temperatursensoren aus, schaltet zwei Relais
-ueber GPIO, schreibt alle 15 Minuten einen Datensatz in eine rotierende CSV-Datei
-und verschickt stuendlich eine Statusmail inkl. CSV-Anhang.
+Liest zyklisch zwei DS18B20 1-Wire Temperatursensoren aus und schaltet zwei Relais
+ueber GPIO (Hysterese-Regelung). Zusaetzlich:
+  - schreibt alle 5 Minuten einen Datensatz in eine rotierende CSV-Datei,
+  - verschickt stuendlich eine Statusmail inkl. CSV-Anhang,
+  - pusht die Messwerte und aktiven Schwellwerte an ein Tago.io-Dashboard und
+    holt von dort per Fernsteuerung neue Schwellwerte (Sollwerte).
 
-Alle anpassbaren Werte (Sensor-IDs, GPIOs, Schwellwerte, SMTP-Zugangsdaten) stehen
-gesammelt im Abschnitt CONFIG.
+Alle anpassbaren Werte (Sensor-IDs, GPIOs, Schwellwerte, SMTP- und Tago-Zugangsdaten)
+stehen gesammelt im Abschnitt CONFIG.
 """
 
 from __future__ import annotations
 
 import csv
 import logging
-import shutil
+import os
 import smtplib
 import time
 from dataclasses import dataclass, field
@@ -41,19 +44,20 @@ SENSOR_2_ID = "28-000000000002"  # TODO: durch echte ID von Sensor 2 ersetzen
 # --- Relais -----------------------------------------------------------------
 RELAIS_1_GPIO = 23  # TODO: ggf. anpassen
 RELAIS_2_GPIO = 24  # TODO: ggf. anpassen
-# Manche Relaisplatinen schalten "active low" (LOW = an). Falls das Relais
-# invertiert reagiert, hier auf True stellen.
-RELAIS_ACTIVE_HIGH = True
+# Viele Relaisplatinen (v.a. mit Optokoppler) schalten "active low": GPIO LOW = an.
+# Fuer solche Platinen muss dieser Wert False sein, sonst sind Anzeige und
+# physischer Schaltzustand invertiert. Nur bei "active high"-Platinen auf True.
+RELAIS_ACTIVE_HIGH = False
 
 # --- Regel-Logik (Platzhalter, bitte an eigene Anforderungen anpassen) ------
-TEMP1_SCHWELLE_AN = 18.0   # Relais 1 einschalten, wenn Temp1 > diesem Wert
-TEMP1_SCHWELLE_AUS = 16.0  # Relais 1 ausschalten, wenn Temp1 < diesem Wert (Hysterese)
-TEMP2_SCHWELLE_AN = 18.0   # Relais 2 einschalten, wenn Temp2 > diesem Wert
-TEMP2_SCHWELLE_AUS = 16.0  # Relais 2 ausschalten, wenn Temp2 < diesem Wert (Hysterese)
+TEMP1_SCHWELLE_AN = 16.5   # Relais 1 einschalten, wenn Temp1 > diesem Wert
+TEMP1_SCHWELLE_AUS = 15.5  # Relais 1 ausschalten, wenn Temp1 < diesem Wert (Hysterese)
+TEMP2_SCHWELLE_AN = 16.5   # Relais 2 einschalten, wenn Temp2 > diesem Wert
+TEMP2_SCHWELLE_AUS = 15.5  # Relais 2 ausschalten, wenn Temp2 < diesem Wert (Hysterese)
 
 # --- Zeitintervalle ----------------------------------------------------------
-MESS_INTERVALL_SEK = 60           # 1 Minute
-CSV_SCHREIB_INTERVALL_SEK = 15 * 60   # 15 Minuten
+MESS_INTERVALL_SEK = 300              # 5 Minuten
+CSV_SCHREIB_INTERVALL_SEK = 5 * 60   # 5 Minuten
 EMAIL_INTERVALL_SEK = 60 * 60         # 1 Stunde
 CSV_ROTATIONS_TAGE = 28               # 4 Wochen
 
@@ -82,6 +86,32 @@ EMAIL_ABSENDER = "user@example.com"   # TODO: Absenderadresse eintragen
 EMAIL_EMPFAENGER = ["empfaenger@example.com"]  # TODO: Empfaengerliste eintragen
 EMAIL_BETREFF_PREFIX = "Weinkuehlung Status"
 
+# --- Tago.io -------------------------------------------------------------------
+# Daten werden per HTTPS an die Tago.io Data-API gepusht. Voraussetzung:
+# In Tago.io ein Device (Connector "Custom HTTPS") anlegen und dessen
+# Device-Token hier eintragen (Device -> Tokens).
+TAGO_AKTIV = True                       # auf False setzen, um den Push abzuschalten
+TAGO_API_URL = "https://api.tago.io/data"
+# Token NICHT im Code speichern: aus der Umgebungsvariable TAGO_DEVICE_TOKEN laden.
+# Auf dem Pi wird sie ueber /etc/kuehlungssteuerung.env gesetzt (siehe systemd-Unit),
+# lokal zum Testen z.B. mit: export TAGO_DEVICE_TOKEN="..."
+TAGO_DEVICE_TOKEN = os.environ.get("TAGO_DEVICE_TOKEN", "changeme")
+TAGO_PUSH_INTERVALL_SEK = 5 * 60        # wie oft an Tago gesendet wird (5 Minuten)
+TAGO_TIMEOUT_SEK = 30                   # Netzwerk-Timeout (WLAN-Verlust abfangen)
+
+# --- Tago.io Sollwert-Fernsteuerung -------------------------------------------
+# Die Schwellwerte koennen aus der Ferne ueber Tago.io gesetzt werden. Dazu im
+# Tago-Dashboard je ein Eingabe-Widget (z.B. "Input Form" oder "Slider") anlegen,
+# das in die unten genannten Variablen des Devices schreibt. Der Pi holt diese
+# Werte regelmaessig ab. Die Werte in der CONFIG oben dienen als Startwerte,
+# solange in Tago noch kein Sollwert gesetzt wurde.
+TAGO_SOLLWERTE_AKTIV = True             # auf False setzen, um die Fernsteuerung abzuschalten
+TAGO_SOLLWERT_INTERVALL_SEK = 5 * 60    # wie oft Sollwerte von Tago geholt werden (5 Minuten)
+TAGO_VAR_SW_AN_1 = "sollwert_an_1"      # Variablenname im Dashboard fuer Einschaltschwelle Sensor 1
+TAGO_VAR_SW_AUS_1 = "sollwert_aus_1"    # Ausschaltschwelle Sensor 1
+TAGO_VAR_SW_AN_2 = "sollwert_an_2"      # Einschaltschwelle Sensor 2
+TAGO_VAR_SW_AUS_2 = "sollwert_aus_2"    # Ausschaltschwelle Sensor 2
+
 # --------------------------------------------------------------------------- #
 # Logging Setup
 # --------------------------------------------------------------------------- #
@@ -96,6 +126,31 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger("kuehlungssteuerung")
+
+
+# --------------------------------------------------------------------------- #
+# Zeitsteuerung
+# --------------------------------------------------------------------------- #
+
+class Intervall:
+    """Einfacher, wiederkehrender Timer auf Basis der monotonen Uhr.
+
+    ``faellig()`` liefert True, sobald die eingestellte Dauer seit dem letzten
+    Ausloesen verstrichen ist, und startet die Wartezeit dann automatisch neu.
+    Die monotone Uhr wird verwendet, damit Systemzeitspruenge (z.B. durch NTP)
+    die Intervalle nicht durcheinanderbringen.
+    """
+
+    def __init__(self, dauer_sek: float, sofort_faellig: bool = True):
+        self.dauer_sek = dauer_sek
+        # sofort_faellig=True -> beim ersten Aufruf gleich ausloesen
+        self._letzter = time.monotonic() - dauer_sek if sofort_faellig else time.monotonic()
+
+    def faellig(self) -> bool:
+        if time.monotonic() - self._letzter >= self.dauer_sek:
+            self._letzter = time.monotonic()
+            return True
+        return False
 
 
 # --------------------------------------------------------------------------- #
@@ -301,12 +356,153 @@ def sende_status_email(csv_logger: CsvLogger, messwerte_letzte_stunde: list) -> 
 
 
 # --------------------------------------------------------------------------- #
+# Tago.io Push
+# --------------------------------------------------------------------------- #
+
+def sende_an_tago(temp1: Optional[float], temp2: Optional[float],
+                  relais1_status: bool, relais2_status: bool,
+                  schwellen: Optional[dict] = None) -> None:
+    """Pusht die aktuellen Messwerte per HTTPS an die Tago.io Data-API.
+
+    Wird ``schwellen`` uebergeben, werden auch die gerade aktiven Schwellwerte
+    (aktiv_*) mitgeschickt, damit das Dashboard den tatsaechlich angewendeten
+    Zustand anzeigt.
+
+    Fehler (z.B. WLAN-Verlust) werden protokolliert, aber nicht weitergereicht,
+    damit die Steuerung ununterbrochen weiterlaeuft.
+    """
+    if not TAGO_AKTIV:
+        return
+
+    # Nur gueltige Messwerte senden; None-Werte (Sensorfehler) auslassen.
+    nutzlast = []
+    if temp1 is not None:
+        nutzlast.append({"variable": "temperatur_1", "value": round(temp1, 2), "unit": "C"})
+    if temp2 is not None:
+        nutzlast.append({"variable": "temperatur_2", "value": round(temp2, 2), "unit": "C"})
+    nutzlast.append({"variable": "relais_1", "value": 1 if relais1_status else 0})
+    nutzlast.append({"variable": "relais_2", "value": 1 if relais2_status else 0})
+
+    # Aktuell angewendete Schwellwerte zurueckmelden (fuer Anzeige-Widgets im Dashboard).
+    if schwellen is not None:
+        nutzlast.append({"variable": "aktiv_an_1", "value": schwellen["an1"], "unit": "C"})
+        nutzlast.append({"variable": "aktiv_aus_1", "value": schwellen["aus1"], "unit": "C"})
+        nutzlast.append({"variable": "aktiv_an_2", "value": schwellen["an2"], "unit": "C"})
+        nutzlast.append({"variable": "aktiv_aus_2", "value": schwellen["aus2"], "unit": "C"})
+
+    try:
+        import requests  # lazy import, damit das Skript ohne die Lib startbar bleibt
+    except ImportError:
+        logger.error("Tago-Push: Bibliothek 'requests' nicht installiert (sudo apt install python3-requests)")
+        return
+
+    try:
+        antwort = requests.post(
+            TAGO_API_URL,
+            json=nutzlast,
+            headers={"Device-Token": TAGO_DEVICE_TOKEN, "Content-Type": "application/json"},
+            timeout=TAGO_TIMEOUT_SEK,
+        )
+        if antwort.status_code == 202:
+            logger.info("Tago-Push erfolgreich (%d Variablen)", len(nutzlast))
+        else:
+            logger.error("Tago-Push fehlgeschlagen: HTTP %s - %s", antwort.status_code, antwort.text[:200])
+    except Exception as exc:  # requests.RequestException u.a. (Netzwerk/WLAN-Verlust)
+        logger.error("Tago-Push fehlgeschlagen (z.B. WLAN-Verlust): %s", exc)
+
+
+def _tago_letzter_wert(requests_modul, variable: str) -> Optional[float]:
+    """Holt den zuletzt gesetzten Wert einer Variable aus dem Tago-Datenspeicher.
+
+    Gibt None zurueck, wenn (noch) kein Wert gesetzt ist oder ein Fehler auftrat.
+    """
+    try:
+        antwort = requests_modul.get(
+            TAGO_API_URL,
+            params={"variable": variable, "query": "last_value"},
+            headers={"Device-Token": TAGO_DEVICE_TOKEN},
+            timeout=TAGO_TIMEOUT_SEK,
+        )
+        if antwort.status_code != 200:
+            logger.error("Tago-Sollwert '%s': HTTP %s - %s", variable, antwort.status_code, antwort.text[:200])
+            return None
+        ergebnis = antwort.json().get("result") or []
+        if not ergebnis:
+            return None  # im Dashboard wurde fuer diese Variable noch kein Wert gesetzt
+        return float(ergebnis[0]["value"])
+    except (ValueError, KeyError, TypeError) as exc:
+        logger.error("Tago-Sollwert '%s': ungueltige Antwort: %s", variable, exc)
+        return None
+    except Exception as exc:  # requests.RequestException u.a. (Netzwerk/WLAN-Verlust)
+        logger.error("Tago-Sollwert '%s' nicht abrufbar (z.B. WLAN-Verlust): %s", variable, exc)
+        return None
+
+
+def hole_sollwerte_von_tago(schwellen: dict) -> dict:
+    """Aktualisiert die Schwellwerte aus dem Tago-Dashboard.
+
+    Uebernimmt nur gueltige Werte und stellt sicher, dass pro Sensor AUS < AN
+    bleibt (Hysterese). Bei Fehlern/fehlenden Werten bleiben die bisherigen
+    Schwellwerte unveraendert.
+    """
+    if not TAGO_SOLLWERTE_AKTIV:
+        return schwellen
+
+    try:
+        import requests  # lazy import, damit das Skript ohne die Lib startbar bleibt
+    except ImportError:
+        logger.error("Tago-Sollwerte: Bibliothek 'requests' nicht installiert (sudo apt install python3-requests)")
+        return schwellen
+
+    zuordnung = {
+        "an1": TAGO_VAR_SW_AN_1,
+        "aus1": TAGO_VAR_SW_AUS_1,
+        "an2": TAGO_VAR_SW_AN_2,
+        "aus2": TAGO_VAR_SW_AUS_2,
+    }
+    neu = dict(schwellen)
+    for schluessel, variable in zuordnung.items():
+        wert = _tago_letzter_wert(requests, variable)
+        if wert is not None:
+            neu[schluessel] = wert
+
+    # Hysterese-Invariante pro Sensor pruefen: AUS muss unter AN liegen.
+    for sensor, aus_key, an_key in (("Sensor1", "aus1", "an1"), ("Sensor2", "aus2", "an2")):
+        if neu[aus_key] >= neu[an_key]:
+            logger.error(
+                "%s: ungueltige Tago-Sollwerte (AUS %.2f >= AN %.2f), behalte bisherige Werte",
+                sensor, neu[aus_key], neu[an_key],
+            )
+            neu[aus_key] = schwellen[aus_key]
+            neu[an_key] = schwellen[an_key]
+
+    if neu != schwellen:
+        logger.info(
+            "Schwellwerte aktualisiert (Tago): S1 AN=%.2f AUS=%.2f | S2 AN=%.2f AUS=%.2f",
+            neu["an1"], neu["aus1"], neu["an2"], neu["aus2"],
+        )
+    return neu
+
+
+# --------------------------------------------------------------------------- #
 # Relais-Regel-Logik (mit einfacher Hysterese)
 # --------------------------------------------------------------------------- #
 
-def relais_logik_anwenden(temp: Optional[float], relais: RelaisController, schwelle_an: float, schwelle_aus: float) -> None:
+def relais_logik_anwenden(temp: Optional[float], relais: RelaisController, schwelle_an: float,
+                          schwelle_aus: float, initial: bool = False) -> None:
     if temp is None:
         logger.warning("%s: keine gueltige Temperatur, Relaisstatus bleibt unveraendert", relais.name)
+        return
+    if initial:
+        # Beim ersten Durchlauf (Start/Neustart) einen definierten Zustand setzen:
+        # ab der AUS-Schwelle (also auch im Band zwischen AUS und AN) einschalten,
+        # nur darunter ausschalten. Danach greift die normale Hysterese.
+        if temp >= schwelle_aus:
+            relais.einschalten()
+            logger.info("%s: Startzustand EIN (Temp %.2f C >= %.2f C)", relais.name, temp, schwelle_aus)
+        else:
+            relais.ausschalten()
+            logger.info("%s: Startzustand AUS (Temp %.2f C < %.2f C)", relais.name, temp, schwelle_aus)
         return
     if temp > schwelle_an and not relais.status:
         relais.einschalten()
@@ -330,11 +526,23 @@ def main() -> None:
     csv_logger = CsvLogger(DATEN_VERZEICHNIS, CSV_DATEINAME_PREFIX, CSV_ROTATIONS_TAGE)
 
     stunden_puffer: list = []  # Messwerte seit der letzten E-Mail, fuer die Zusammenfassung
+    erster_durchlauf = True    # beim Start einen definierten Relaiszustand setzen (siehe relais_logik_anwenden)
+
+    # Schwellwerte zur Laufzeit halten (Startwerte aus CONFIG). Werden ggf. per
+    # Tago.io-Fernsteuerung aktualisiert, ohne das Programm neu zu starten.
+    schwellen = {
+        "an1": TEMP1_SCHWELLE_AN,
+        "aus1": TEMP1_SCHWELLE_AUS,
+        "an2": TEMP2_SCHWELLE_AN,
+        "aus2": TEMP2_SCHWELLE_AUS,
+    }
 
     # monotone Referenzzeit verwenden, damit Systemzeitsprünge (NTP) die
     # Intervalle nicht durcheinanderbringen
-    letzter_csv_schreibvorgang = time.monotonic() - CSV_SCHREIB_INTERVALL_SEK
-    letzter_email_versand = time.monotonic() - EMAIL_INTERVALL_SEK
+    sollwert_timer = Intervall(TAGO_SOLLWERT_INTERVALL_SEK)
+    csv_timer = Intervall(CSV_SCHREIB_INTERVALL_SEK)
+    tago_push_timer = Intervall(TAGO_PUSH_INTERVALL_SEK)
+    email_timer = Intervall(EMAIL_INTERVALL_SEK)
 
     try:
         while True:
@@ -347,9 +555,20 @@ def main() -> None:
                 logger.error("Unerwarteter Fehler beim Sensor-Lesen: %s", exc)
                 temp1, temp2 = None, None
 
+            # Schwellwerte ggf. aus dem Tago-Dashboard aktualisieren (vor der Relaislogik,
+            # damit auch der Startzustand bereits die aktuellen Sollwerte verwendet).
+            if sollwert_timer.faellig():
+                try:
+                    schwellen = hole_sollwerte_von_tago(schwellen)
+                except Exception as exc:
+                    logger.error("Unerwarteter Fehler beim Sollwert-Abruf: %s", exc)
+
             try:
-                relais_logik_anwenden(temp1, relais1, TEMP1_SCHWELLE_AN, TEMP1_SCHWELLE_AUS)
-                relais_logik_anwenden(temp2, relais2, TEMP2_SCHWELLE_AN, TEMP2_SCHWELLE_AUS)
+                relais_logik_anwenden(temp1, relais1, schwellen["an1"], schwellen["aus1"], initial=erster_durchlauf)
+                relais_logik_anwenden(temp2, relais2, schwellen["an2"], schwellen["aus2"], initial=erster_durchlauf)
+                # Startzustand gilt als gesetzt, sobald beide Sensoren einen gueltigen Wert lieferten.
+                if erster_durchlauf and temp1 is not None and temp2 is not None:
+                    erster_durchlauf = False
             except Exception as exc:
                 logger.error("Unerwarteter Fehler in der Relaislogik: %s", exc)
 
@@ -362,23 +581,27 @@ def main() -> None:
                 "relais2": relais2.status,
             })
 
-            if time.monotonic() - letzter_csv_schreibvorgang >= CSV_SCHREIB_INTERVALL_SEK:
+            if csv_timer.faellig():
                 try:
                     csv_logger.zeile_schreiben(jetzt, temp1, temp2, relais1.status, relais2.status)
                 except Exception as exc:
                     logger.error("Unerwarteter Fehler beim CSV-Schreiben: %s", exc)
-                letzter_csv_schreibvorgang = time.monotonic()
 
-            if time.monotonic() - letzter_email_versand >= EMAIL_INTERVALL_SEK:
+            if tago_push_timer.faellig():
+                try:
+                    sende_an_tago(temp1, temp2, relais1.status, relais2.status, schwellen)
+                except Exception as exc:
+                    logger.error("Unerwarteter Fehler beim Tago-Push: %s", exc)
+
+            if email_timer.faellig():
                 try:
                     sende_status_email(csv_logger, stunden_puffer)
                 except Exception as exc:
                     logger.error("Unerwarteter Fehler beim E-Mail-Versand: %s", exc)
-                letzter_email_versand = time.monotonic()
                 stunden_puffer = []
 
-            # Restzeit bis zur naechsten vollen Minute abwarten (nicht blockierend fuer 1h,
-            # sondern kurze Schlafphasen, damit das Skript reaktionsfaehig bleibt)
+            # Bis zum naechsten Messzyklus warten. Es wird nur die Restzeit geschlafen,
+            # damit die tatsaechliche Auslesefrequenz nahe an MESS_INTERVALL_SEK bleibt.
             verbrauchte_zeit = time.monotonic() - schleifen_start
             schlafzeit = max(0.0, MESS_INTERVALL_SEK - verbrauchte_zeit)
             time.sleep(schlafzeit)
