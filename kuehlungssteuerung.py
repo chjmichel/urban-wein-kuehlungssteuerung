@@ -77,13 +77,22 @@ LOG_DATEI = Path("/home/pi/kuehlungssteuerung/kuehlungssteuerung.log")  # TODO: 
 LOG_LEVEL = logging.INFO
 
 # --- SMTP / E-Mail -------------------------------------------------------------
-SMTP_SERVER = "smtp.example.com"      # TODO: SMTP-Server eintragen
-SMTP_PORT = 587                       # TODO: z.B. 587 (STARTTLS) oder 465 (SSL)
-SMTP_USE_SSL = False                  # True fuer Port 465, False fuer STARTTLS (587)
-SMTP_LOGIN = "user@example.com"       # TODO: SMTP-Login eintragen
-SMTP_PASSWORT = "changeme"            # TODO: SMTP-Passwort eintragen (besser: ueber Umgebungsvariable laden)
-EMAIL_ABSENDER = "user@example.com"   # TODO: Absenderadresse eintragen
-EMAIL_EMPFAENGER = ["empfaenger@example.com"]  # TODO: Empfaengerliste eintragen
+# Zugangsdaten NICHT im Code speichern: aus Umgebungsvariablen laden. Auf dem Pi
+# werden sie ueber /etc/kuehlungssteuerung.env gesetzt (siehe systemd-Unit), z.B.:
+#   SMTP_SERVER=smtp.strato.de
+#   SMTP_PORT=465
+#   SMTP_USE_SSL=true
+#   SMTP_LOGIN=absender@example.com
+#   SMTP_PASSWORT=geheim
+#   EMAIL_ABSENDER=absender@example.com
+#   EMAIL_EMPFAENGER=a@example.com,b@example.com   (mehrere durch Komma trennen)
+SMTP_SERVER = os.environ.get("SMTP_SERVER", "")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USE_SSL = os.environ.get("SMTP_USE_SSL", "false").strip().lower() in ("1", "true", "yes", "ja")
+SMTP_LOGIN = os.environ.get("SMTP_LOGIN", "")
+SMTP_PASSWORT = os.environ.get("SMTP_PASSWORT", "")
+EMAIL_ABSENDER = os.environ.get("EMAIL_ABSENDER", SMTP_LOGIN)
+EMAIL_EMPFAENGER = [a.strip() for a in os.environ.get("EMAIL_EMPFAENGER", "").split(",") if a.strip()]
 EMAIL_BETREFF_PREFIX = "Weinkuehlung Status"
 
 # --- Tago.io -------------------------------------------------------------------
@@ -305,6 +314,15 @@ def sende_status_email(csv_logger: CsvLogger, messwerte_letzte_stunde: list) -> 
 
     Gibt True zurueck, wenn die E-Mail versendet wurde, sonst False (z.B. bei WLAN-Verlust).
     """
+    # Ohne konfigurierte Zugangsdaten (env-Datei fehlt/unvollstaendig) gar nicht erst
+    # versuchen zu senden - sonst gaebe es jede Stunde einen Login-Fehler im Log.
+    if not (SMTP_SERVER and EMAIL_EMPFAENGER and SMTP_PASSWORT):
+        logger.warning(
+            "E-Mail nicht konfiguriert (SMTP_SERVER/EMAIL_EMPFAENGER/SMTP_PASSWORT fehlen) "
+            "- Versand uebersprungen. Zugangsdaten in /etc/kuehlungssteuerung.env setzen."
+        )
+        return False
+
     if not messwerte_letzte_stunde:
         zusammenfassung = "Keine gueltigen Messwerte in der letzten Stunde verfuegbar."
     else:
