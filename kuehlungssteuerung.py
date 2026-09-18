@@ -38,8 +38,8 @@ from typing import Optional
 # (Ordner beginnen mit "28-...", das 1-Wire-Interface muss vorher per
 #  raspi-config bzw. /boot/config.txt aktiviert werden: dtoverlay=w1-gpio)
 W1_BASE_PATH = Path("/sys/bus/w1/devices")
-SENSOR_1_ID = "28-000000000001"  # TODO: durch echte ID von Sensor 1 ersetzen
-SENSOR_2_ID = "28-000000000002"  # TODO: durch echte ID von Sensor 2 ersetzen
+SENSOR_1_ID = "28-000000c8f311"
+SENSOR_2_ID = "28-000000cb40fb"
 
 # --- Relais -----------------------------------------------------------------
 RELAIS_1_GPIO = 23  # TODO: ggf. anpassen
@@ -91,7 +91,8 @@ EMAIL_BETREFF_PREFIX = "Weinkuehlung Status"
 # In Tago.io ein Device (Connector "Custom HTTPS") anlegen und dessen
 # Device-Token hier eintragen (Device -> Tokens).
 TAGO_AKTIV = True                       # auf False setzen, um den Push abzuschalten
-TAGO_API_URL = "https://api.tago.io/data"
+# Region muss zum Tago-Account passen: US = api.tago.io, EU = api.eu-w1.tago.io
+TAGO_API_URL = "https://api.eu-w1.tago.io/data"
 # Token NICHT im Code speichern: aus der Umgebungsvariable TAGO_DEVICE_TOKEN laden.
 # Auf dem Pi wird sie ueber /etc/kuehlungssteuerung.env gesetzt (siehe systemd-Unit),
 # lokal zum Testen z.B. mit: export TAGO_DEVICE_TOKEN="..."

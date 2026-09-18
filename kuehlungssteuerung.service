@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
+User=urban
 WorkingDirectory=/home/pi/kuehlungssteuerung
 # Zugangsdaten (Token, ggf. SMTP-Passwort) aus einer nicht eingecheckten Datei laden.
 # Das fuehrende "-" macht die Datei optional (Start schlaegt nicht fehl, wenn sie fehlt).
