@@ -111,7 +111,7 @@ TAGO_API_URL = "https://api.eu-w1.tago.io/data"
 # Auf dem Pi wird sie ueber /etc/kuehlungssteuerung.env gesetzt (siehe systemd-Unit),
 # lokal zum Testen z.B. mit: export TAGO_DEVICE_TOKEN="..."
 TAGO_DEVICE_TOKEN = os.environ.get("TAGO_DEVICE_TOKEN", "changeme")
-TAGO_PUSH_INTERVALL_SEK = 5 * 60        # wie oft an Tago gesendet wird (5 Minuten)
+TAGO_PUSH_INTERVALL_SEK = 60        # wie oft an Tago gesendet wird (1 Minute, für schnelles Testen)
 TAGO_TIMEOUT_SEK = 30                   # Netzwerk-Timeout (WLAN-Verlust abfangen)
 
 # --- Tago.io Sollwert-Fernsteuerung -------------------------------------------
@@ -121,7 +121,7 @@ TAGO_TIMEOUT_SEK = 30                   # Netzwerk-Timeout (WLAN-Verlust abfange
 # Werte regelmaessig ab. Die Werte in der CONFIG oben dienen als Startwerte,
 # solange in Tago noch kein Sollwert gesetzt wurde.
 TAGO_SOLLWERTE_AKTIV = True             # auf False setzen, um die Fernsteuerung abzuschalten
-TAGO_SOLLWERT_INTERVALL_SEK = 5 * 60    # wie oft Sollwerte von Tago geholt werden (5 Minuten)
+TAGO_SOLLWERT_INTERVALL_SEK = 60        # wie oft Sollwerte von Tago geholt werden (1 Minute, für schnelles Testen)
 TAGO_VAR_SW_AN_1 = "sollwert_an_1"      # Variablenname im Dashboard fuer Einschaltschwelle Sensor 1
 TAGO_VAR_SW_AUS_1 = "sollwert_aus_1"    # Ausschaltschwelle Sensor 1
 TAGO_VAR_SW_AN_2 = "sollwert_an_2"      # Einschaltschwelle Sensor 2
