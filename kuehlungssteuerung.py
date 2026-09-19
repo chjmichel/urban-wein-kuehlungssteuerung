@@ -19,6 +19,7 @@ import csv
 import logging
 import os
 import smtplib
+import subprocess
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -259,6 +260,22 @@ class RelaisController:
         try:
             self._lgpio.gpio_write(self._handle, self._gpio, self._pegel(an))
             self._an = an
+
+            # Diagnose: aktuellen GPIO-Zustand mit pinctrl loggen
+            try:
+                result = subprocess.run(['pinctrl', 'get', str(self._gpio)],
+                                        capture_output=True, text=True, timeout=2)
+                if result.returncode == 0:
+                    pinctrl_info = result.stdout.strip()
+                    logger.info("%s: %s (GPIO %d) → pinctrl: %s", self.name,
+                               "eingeschaltet" if an else "ausgeschaltet", self._gpio, pinctrl_info)
+                else:
+                    logger.info("%s: %s (GPIO %d)", self.name,
+                               "eingeschaltet" if an else "ausgeschaltet", self._gpio)
+            except Exception as e:
+                logger.debug("%s: pinctrl-Diagnose konnte nicht ausgefuehrt werden: %s", self.name, e)
+                logger.info("%s: %s (GPIO %d)", self.name,
+                           "eingeschaltet" if an else "ausgeschaltet", self._gpio)
         except Exception as exc:  # pragma: no cover - Hardwareabhaengig
             logger.error("%s: Fehler beim Schalten des Relais: %s", self.name, exc)
 
