@@ -61,7 +61,7 @@ TEMP2_SCHWELLE_AN = 16.5   # Relais 2 einschalten, wenn Temp2 > diesem Wert
 TEMP2_SCHWELLE_AUS = 15.5  # Relais 2 ausschalten, wenn Temp2 < diesem Wert (Hysterese)
 
 # --- Zeitintervalle ----------------------------------------------------------
-MESS_INTERVALL_SEK = 300              # 5 Minuten
+MESS_INTERVALL_SEK = 60                 # 1 Minute
 CSV_SCHREIB_INTERVALL_SEK = 5 * 60   # 5 Minuten
 EMAIL_INTERVALL_SEK = 60 * 60         # 1 Stunde
 CSV_ROTATIONS_TAGE = 28               # 4 Wochen
@@ -593,7 +593,7 @@ def main() -> None:
     sensor1 = DS18B20Sensor(SENSOR_1_ID, "Sensor1")
     sensor2 = DS18B20Sensor(SENSOR_2_ID, "Sensor2")
     relais1 = RelaisController(RELAIS_1_GPIO, "Relais1", RELAIS_ACTIVE_HIGH)
-    relais2 = RelaisController(RELAIS_2_GPIO, "Relais2", RELAIS_ACTIVE_HIGH)
+    relais2 = RelaisController(RELAIS_2_GPIO, "Relais2", True)  # Relais2 ist active-high!
     csv_logger = CsvLogger(DATEN_VERZEICHNIS, CSV_DATEINAME_PREFIX, CSV_ROTATIONS_TAGE)
 
     stunden_puffer: list = []  # Messwerte seit der letzten E-Mail, fuer die Zusammenfassung
