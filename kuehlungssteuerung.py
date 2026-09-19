@@ -593,7 +593,7 @@ def main() -> None:
     sensor1 = DS18B20Sensor(SENSOR_1_ID, "Sensor1")
     sensor2 = DS18B20Sensor(SENSOR_2_ID, "Sensor2")
     relais1 = RelaisController(RELAIS_1_GPIO, "Relais1", RELAIS_ACTIVE_HIGH)
-    relais2 = RelaisController(RELAIS_2_GPIO, "Relais2", True)  # Relais2 ist active-high!
+    relais2 = RelaisController(RELAIS_2_GPIO, "Relais2", RELAIS_ACTIVE_HIGH)
     csv_logger = CsvLogger(DATEN_VERZEICHNIS, CSV_DATEINAME_PREFIX, CSV_ROTATIONS_TAGE)
 
     stunden_puffer: list = []  # Messwerte seit der letzten E-Mail, fuer die Zusammenfassung
