@@ -229,10 +229,7 @@ class RelaisController:
             self._lgpio = lgpio
             self._handle = lgpio.gpiochip_open(chip)
             # Mit definiertem AUS-Zustand starten (Pegel je nach active_high).
-            # Bias auf DISABLED setzen, damit der Pin seinen Zustand stabil haelt
-            # (ohne Pull-Up/Pull-Down Rueckfall).
-            flags = lgpio.GPIO_LINE_REQUEST_BIAS_DISABLED
-            lgpio.gpio_claim_output(self._handle, gpio_pin, self._pegel(False), flags)
+            lgpio.gpio_claim_output(self._handle, gpio_pin, self._pegel(False))
         except Exception as exc:  # pragma: no cover - Hardwareabhaengig
             logger.error("%s: Relais auf GPIO %s (Chip %s) konnte nicht initialisiert werden: %s",
                          name, gpio_pin, chip, exc)
@@ -261,24 +258,29 @@ class RelaisController:
             logger.error("%s: Relais nicht initialisiert, Schaltbefehl ignoriert", self.name)
             return
         try:
-            self._lgpio.gpio_write(self._handle, self._gpio, self._pegel(an))
+            pegel = self._pegel(an)
+            self._lgpio.gpio_write(self._handle, self._gpio, pegel)
             self._an = an
 
-            # Diagnose: aktuellen GPIO-Zustand mit pinctrl loggen
+            # Diagnose: aktuellen GPIO-Zustand auslesen + pinctrl loggen
             try:
+                # Wert direkt vom Handle auslesen (sollte dem eben geschriebenen Wert entsprechen)
+                actual = self._lgpio.gpio_read(self._handle, self._gpio)
+                match = "✓" if actual == pegel else f"✗ (erwartet {pegel}, gelesen {actual})"
+
                 result = subprocess.run(['pinctrl', 'get', str(self._gpio)],
                                         capture_output=True, text=True, timeout=2)
                 if result.returncode == 0:
                     pinctrl_info = result.stdout.strip()
-                    logger.info("%s: %s (GPIO %d) → pinctrl: %s", self.name,
-                               "eingeschaltet" if an else "ausgeschaltet", self._gpio, pinctrl_info)
+                    logger.info("%s: %s (GPIO %d, Pegel %d %s) → pinctrl: %s", self.name,
+                               "eingeschaltet" if an else "ausgeschaltet", self._gpio, pegel, match, pinctrl_info)
                 else:
-                    logger.info("%s: %s (GPIO %d)", self.name,
-                               "eingeschaltet" if an else "ausgeschaltet", self._gpio)
+                    logger.info("%s: %s (GPIO %d, Pegel %d %s)", self.name,
+                               "eingeschaltet" if an else "ausgeschaltet", self._gpio, pegel, match)
             except Exception as e:
-                logger.debug("%s: pinctrl-Diagnose konnte nicht ausgefuehrt werden: %s", self.name, e)
-                logger.info("%s: %s (GPIO %d)", self.name,
-                           "eingeschaltet" if an else "ausgeschaltet", self._gpio)
+                logger.debug("%s: Diagnose konnte nicht ausgefuehrt werden: %s", self.name, e)
+                logger.info("%s: %s (GPIO %d, Pegel %d)", self.name,
+                           "eingeschaltet" if an else "ausgeschaltet", self._gpio, pegel)
         except Exception as exc:  # pragma: no cover - Hardwareabhaengig
             logger.error("%s: Fehler beim Schalten des Relais: %s", self.name, exc)
 
