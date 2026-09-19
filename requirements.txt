@@ -1,2 +1,2 @@
-gpiozero
+lgpio
 requests

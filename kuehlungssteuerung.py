@@ -42,6 +42,10 @@ SENSOR_1_ID = "28-000000c8f311"
 SENSOR_2_ID = "28-000000cb40fb"
 
 # --- Relais -----------------------------------------------------------------
+# Die Ansteuerung erfolgt ueber lgpio (dieselbe libgpiod-Schnittstelle wie das
+# Kommandozeilen-Tool "gpioset"). Das funktioniert auf aktuellen Raspberry-Pi-OS-
+# Versionen zuverlaessig, wo gpiozero den Pin je nach Pin-Factory nicht erreicht.
+GPIO_CHIP = 0       # gpiochip-Index (auf Pi 4/Zero i.d.R. 0; entspricht "gpioset -c 0 ...")
 RELAIS_1_GPIO = 23  # TODO: ggf. anpassen
 RELAIS_2_GPIO = 24  # TODO: ggf. anpassen
 # Viele Relaisplatinen (v.a. mit Optokoppler) schalten "active low": GPIO LOW = an.
@@ -205,22 +209,42 @@ class DS18B20Sensor:
 # --------------------------------------------------------------------------- #
 
 class RelaisController:
-    """Kapselt die GPIO-Ansteuerung eines Relais ueber gpiozero."""
+    """Kapselt die GPIO-Ansteuerung eines Relais ueber lgpio.
 
-    def __init__(self, gpio_pin: int, name: str, active_high: bool = True):
+    lgpio spricht dieselbe libgpiod-Schnittstelle an wie das Kommandozeilen-Tool
+    ``gpioset`` und funktioniert auf aktuellen Raspberry-Pi-OS-Versionen zuverlaessig,
+    wo gpiozero den Pin je nach Pin-Factory nicht tatsaechlich schaltet.
+    """
+
+    def __init__(self, gpio_pin: int, name: str, active_high: bool = True, chip: int = GPIO_CHIP):
         self.name = name
-        self._device = None
+        self.active_high = active_high
+        self._gpio = gpio_pin
+        self._handle = None
+        self._lgpio = None
+        self._an = False  # logischer Zustand (True = Kuehlung an); getrennt vom Pegel gehalten
         try:
-            from gpiozero import OutputDevice
-            self._device = OutputDevice(gpio_pin, active_high=active_high, initial_value=False)
+            import lgpio
+            self._lgpio = lgpio
+            self._handle = lgpio.gpiochip_open(chip)
+            # Mit definiertem AUS-Zustand starten (Pegel je nach active_high).
+            lgpio.gpio_claim_output(self._handle, gpio_pin, self._pegel(False))
         except Exception as exc:  # pragma: no cover - Hardwareabhaengig
-            logger.error("%s: Relais auf GPIO %s konnte nicht initialisiert werden: %s", name, gpio_pin, exc)
+            logger.error("%s: Relais auf GPIO %s (Chip %s) konnte nicht initialisiert werden: %s",
+                         name, gpio_pin, chip, exc)
+            self._handle = None
+
+    def _pegel(self, an: bool) -> int:
+        """Uebersetzt den logischen Zustand in den physischen GPIO-Pegel.
+
+        active_high=True:  an -> HIGH(1), aus -> LOW(0)
+        active_high=False: an -> LOW(0),  aus -> HIGH(1)   (typische Optokoppler-Platine)
+        """
+        return 1 if (an == self.active_high) else 0
 
     @property
     def status(self) -> bool:
-        if self._device is None:
-            return False
-        return bool(self._device.value)
+        return self._an
 
     def einschalten(self) -> None:
         self._setzen(True)
@@ -229,23 +253,24 @@ class RelaisController:
         self._setzen(False)
 
     def _setzen(self, an: bool) -> None:
-        if self._device is None:
+        if self._handle is None:
             logger.error("%s: Relais nicht initialisiert, Schaltbefehl ignoriert", self.name)
             return
         try:
-            if an:
-                self._device.on()
-            else:
-                self._device.off()
+            self._lgpio.gpio_write(self._handle, self._gpio, self._pegel(an))
+            self._an = an
         except Exception as exc:  # pragma: no cover - Hardwareabhaengig
             logger.error("%s: Fehler beim Schalten des Relais: %s", self.name, exc)
 
     def schliessen(self) -> None:
-        if self._device is not None:
+        if self._handle is not None:
             try:
-                self._device.close()
+                # Beim Beenden definiert auf AUS setzen, dann den Chip freigeben.
+                self._lgpio.gpio_write(self._handle, self._gpio, self._pegel(False))
+                self._lgpio.gpiochip_close(self._handle)
             except Exception:
                 pass
+            self._handle = None
 
 
 # --------------------------------------------------------------------------- #
