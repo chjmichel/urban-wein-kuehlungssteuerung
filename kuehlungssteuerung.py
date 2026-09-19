@@ -1,16 +1,26 @@
 #!/usr/bin/env python3
 """
-Weinkuehlungssteuerung fuer Raspberry Pi Zero W (ARMv6, Raspberry Pi OS Bullseye/Bookworm Lite).
+Weinkuehlungssteuerung fuer Raspberry Pi (getestet auf Pi 4, Raspberry Pi OS Bookworm).
 
 Liest zyklisch zwei DS18B20 1-Wire Temperatursensoren aus und schaltet zwei Relais
-ueber GPIO (Hysterese-Regelung). Zusaetzlich:
-  - schreibt alle 5 Minuten einen Datensatz in eine rotierende CSV-Datei,
-  - verschickt stuendlich eine Statusmail inkl. CSV-Anhang,
+ueber GPIO (Hysterese-Regelung). Die GPIO-Ansteuerung erfolgt ueber lgpio (dieselbe
+libgpiod-Schnittstelle wie das Kommandozeilen-Tool "gpioset"). Zusaetzlich:
+  - schreibt regelmaessig einen Datensatz in eine tagesweise rotierende CSV-Datei
+    (alte Dateien werden nach CSV_ROTATIONS_TAGE automatisch geloescht),
+  - verschickt stuendlich eine Statusmail inkl. aktueller CSV als Anhang,
   - pusht die Messwerte und aktiven Schwellwerte an ein Tago.io-Dashboard und
     holt von dort per Fernsteuerung neue Schwellwerte (Sollwerte).
 
 Alle anpassbaren Werte (Sensor-IDs, GPIOs, Schwellwerte, SMTP- und Tago-Zugangsdaten)
-stehen gesammelt im Abschnitt CONFIG.
+stehen gesammelt im Abschnitt CONFIG. Zugangsdaten und die Schalter TEST_MODUS /
+RELAIS_DEBUG werden aus Umgebungsvariablen gelesen (auf dem Pi ueber
+/etc/kuehlungssteuerung.env, siehe systemd-Unit).
+
+Umgebungsvariablen-Schalter:
+  TEST_MODUS=true    -> schnelle Reaktionsintervalle (~1 min) zum Testen,
+                        sonst schonende 5 Minuten im Normalbetrieb.
+  RELAIS_DEBUG=true  -> nach jedem Schaltvorgang zusaetzlich den physischen
+                        GPIO-Zustand (gpio_read + pinctrl) ins Log schreiben.
 """
 
 from __future__ import annotations
@@ -22,7 +32,7 @@ import smtplib
 import subprocess
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -53,6 +63,11 @@ RELAIS_2_GPIO = 24  # TODO: ggf. anpassen
 # Fuer solche Platinen muss dieser Wert False sein, sonst sind Anzeige und
 # physischer Schaltzustand invertiert. Nur bei "active high"-Platinen auf True.
 RELAIS_ACTIVE_HIGH = False
+# Diagnose: bei True wird nach jedem Schaltvorgang der physische GPIO-Zustand
+# (gpio_read + "pinctrl get") mitgeloggt. Nur zum Debuggen einschalten - im
+# Dauerbetrieb erzeugt es Log-Rauschen und startet je Schaltung einen Subprozess.
+# Wird aus der Umgebung gelesen (z.B. RELAIS_DEBUG=true in /etc/kuehlungssteuerung.env).
+RELAIS_DEBUG = os.environ.get("RELAIS_DEBUG", "false").strip().lower() in ("1", "true", "yes", "ja")
 
 # --- Regel-Logik (Platzhalter, bitte an eigene Anforderungen anpassen) ------
 TEMP1_SCHWELLE_AN = 16.5   # Relais 1 einschalten, wenn Temp1 > diesem Wert
@@ -61,10 +76,17 @@ TEMP2_SCHWELLE_AN = 16.5   # Relais 2 einschalten, wenn Temp2 > diesem Wert
 TEMP2_SCHWELLE_AUS = 15.5  # Relais 2 ausschalten, wenn Temp2 < diesem Wert (Hysterese)
 
 # --- Zeitintervalle ----------------------------------------------------------
-MESS_INTERVALL_SEK = 60                 # 1 Minute
-CSV_SCHREIB_INTERVALL_SEK = 5 * 60   # 5 Minuten
-EMAIL_INTERVALL_SEK = 60 * 60         # 1 Stunde
-CSV_ROTATIONS_TAGE = 28               # 4 Wochen
+# TEST_MODUS (aus der Umgebung, z.B. TEST_MODUS=true in /etc/kuehlungssteuerung.env)
+# schaltet die drei "Reaktionsintervalle" auf schnelle 60 s, damit Aenderungen im
+# Dashboard beim Testen zuegig sichtbar werden. Ohne TEST_MODUS gelten die schonenden
+# 5 Minuten (weniger Sensor-/Netzlast, laengere SD-Karten-Lebensdauer).
+TEST_MODUS = os.environ.get("TEST_MODUS", "false").strip().lower() in ("1", "true", "yes", "ja")
+_REAKTION_SEK = 60 if TEST_MODUS else 5 * 60
+
+MESS_INTERVALL_SEK = _REAKTION_SEK          # wie oft die Sensoren gelesen werden
+CSV_SCHREIB_INTERVALL_SEK = 5 * 60          # wie oft eine CSV-Zeile geschrieben wird (fix: 5 Minuten)
+EMAIL_INTERVALL_SEK = 60 * 60               # wie oft eine Status-E-Mail verschickt wird (fix: 1 Stunde)
+CSV_ROTATIONS_TAGE = 28                     # Aufbewahrungsdauer der CSV-Dateien (4 Wochen), danach loeschen
 
 # --- CSV ---------------------------------------------------------------------
 DATEN_VERZEICHNIS = Path("/home/pi/kuehlungssteuerung/daten")  # TODO: ggf. anpassen
@@ -99,11 +121,16 @@ SMTP_PASSWORT = os.environ.get("SMTP_PASSWORT", "")
 EMAIL_ABSENDER = os.environ.get("EMAIL_ABSENDER", SMTP_LOGIN)
 EMAIL_EMPFAENGER = [a.strip() for a in os.environ.get("EMAIL_EMPFAENGER", "").split(",") if a.strip()]
 EMAIL_BETREFF_PREFIX = "Weinkuehlung Status"
+# Obergrenze fuer den Messwert-Puffer der stuendlichen Zusammenfassung. Er wird nur
+# geleert, wenn die E-Mail erfolgreich raus ist - bei dauerhaftem WLAN-Verlust wuerde
+# er sonst unbegrenzt wachsen. Bei Ueberschreitung werden die aeltesten Eintraege
+# verworfen (5000 entspricht mehreren Tagen bei 1-Minuten-Takt).
+MAX_PUFFER_EINTRAEGE = 5000
 
 # --- Tago.io -------------------------------------------------------------------
 # Daten werden per HTTPS an die Tago.io Data-API gepusht. Voraussetzung:
-# In Tago.io ein Device (Connector "Custom HTTPS") anlegen und dessen
-# Device-Token hier eintragen (Device -> Tokens).
+# In Tago.io ein Device (Connector "Custom HTTPS") anlegen und dessen Device-Token
+# in der Umgebungsvariable TAGO_DEVICE_TOKEN hinterlegen (Device -> Tokens).
 TAGO_AKTIV = True                       # auf False setzen, um den Push abzuschalten
 # Region muss zum Tago-Account passen: US = api.tago.io, EU = api.eu-w1.tago.io
 TAGO_API_URL = "https://api.eu-w1.tago.io/data"
@@ -111,7 +138,7 @@ TAGO_API_URL = "https://api.eu-w1.tago.io/data"
 # Auf dem Pi wird sie ueber /etc/kuehlungssteuerung.env gesetzt (siehe systemd-Unit),
 # lokal zum Testen z.B. mit: export TAGO_DEVICE_TOKEN="..."
 TAGO_DEVICE_TOKEN = os.environ.get("TAGO_DEVICE_TOKEN", "changeme")
-TAGO_PUSH_INTERVALL_SEK = 60        # wie oft an Tago gesendet wird (1 Minute, für schnelles Testen)
+TAGO_PUSH_INTERVALL_SEK = _REAKTION_SEK  # wie oft an Tago gesendet wird (TEST_MODUS: 60 s, sonst 5 min)
 TAGO_TIMEOUT_SEK = 30                   # Netzwerk-Timeout (WLAN-Verlust abfangen)
 
 # --- Tago.io Sollwert-Fernsteuerung -------------------------------------------
@@ -121,7 +148,7 @@ TAGO_TIMEOUT_SEK = 30                   # Netzwerk-Timeout (WLAN-Verlust abfange
 # Werte regelmaessig ab. Die Werte in der CONFIG oben dienen als Startwerte,
 # solange in Tago noch kein Sollwert gesetzt wurde.
 TAGO_SOLLWERTE_AKTIV = True             # auf False setzen, um die Fernsteuerung abzuschalten
-TAGO_SOLLWERT_INTERVALL_SEK = 60        # wie oft Sollwerte von Tago geholt werden (1 Minute, für schnelles Testen)
+TAGO_SOLLWERT_INTERVALL_SEK = _REAKTION_SEK  # wie oft Sollwerte von Tago geholt werden (TEST_MODUS: 60 s, sonst 5 min)
 TAGO_VAR_SW_AN_1 = "sollwert_an_1"      # Variablenname im Dashboard fuer Einschaltschwelle Sensor 1
 TAGO_VAR_SW_AUS_1 = "sollwert_aus_1"    # Ausschaltschwelle Sensor 1
 TAGO_VAR_SW_AN_2 = "sollwert_an_2"      # Einschaltschwelle Sensor 2
@@ -261,28 +288,31 @@ class RelaisController:
             pegel = self._pegel(an)
             self._lgpio.gpio_write(self._handle, self._gpio, pegel)
             self._an = an
-
-            # Diagnose: aktuellen GPIO-Zustand auslesen + pinctrl loggen
-            try:
-                # Wert direkt vom Handle auslesen (sollte dem eben geschriebenen Wert entsprechen)
-                actual = self._lgpio.gpio_read(self._handle, self._gpio)
-                match = "✓" if actual == pegel else f"✗ (erwartet {pegel}, gelesen {actual})"
-
-                result = subprocess.run(['pinctrl', 'get', str(self._gpio)],
-                                        capture_output=True, text=True, timeout=2)
-                if result.returncode == 0:
-                    pinctrl_info = result.stdout.strip()
-                    logger.info("%s: %s (GPIO %d, Pegel %d %s) → pinctrl: %s", self.name,
-                               "eingeschaltet" if an else "ausgeschaltet", self._gpio, pegel, match, pinctrl_info)
-                else:
-                    logger.info("%s: %s (GPIO %d, Pegel %d %s)", self.name,
-                               "eingeschaltet" if an else "ausgeschaltet", self._gpio, pegel, match)
-            except Exception as e:
-                logger.debug("%s: Diagnose konnte nicht ausgefuehrt werden: %s", self.name, e)
-                logger.info("%s: %s (GPIO %d, Pegel %d)", self.name,
-                           "eingeschaltet" if an else "ausgeschaltet", self._gpio, pegel)
+            logger.info("%s: %s (GPIO %d, Pegel %d)", self.name,
+                        "eingeschaltet" if an else "ausgeschaltet", self._gpio, pegel)
+            if RELAIS_DEBUG:
+                self._diagnose(pegel)
         except Exception as exc:  # pragma: no cover - Hardwareabhaengig
             logger.error("%s: Fehler beim Schalten des Relais: %s", self.name, exc)
+
+    def _diagnose(self, pegel: int) -> None:
+        """Loggt den tatsaechlichen GPIO-Zustand (nur bei RELAIS_DEBUG).
+
+        Vergleicht den zurueckgelesenen Pegel mit dem geschriebenen und haengt die
+        Ausgabe von "pinctrl get" an. Fehler hier duerfen die Steuerung nicht stoeren.
+        """
+        try:
+            gelesen = self._lgpio.gpio_read(self._handle, self._gpio)
+            match = "OK" if gelesen == pegel else f"ABWEICHUNG (erwartet {pegel}, gelesen {gelesen})"
+            result = subprocess.run(["pinctrl", "get", str(self._gpio)],
+                                    capture_output=True, text=True, timeout=2)
+            if result.returncode == 0:
+                logger.info("%s: Diagnose GPIO %d = %s | pinctrl: %s",
+                            self.name, self._gpio, match, result.stdout.strip())
+            else:
+                logger.info("%s: Diagnose GPIO %d = %s", self.name, self._gpio, match)
+        except Exception as exc:
+            logger.debug("%s: Diagnose konnte nicht ausgefuehrt werden: %s", self.name, exc)
 
     def schliessen(self) -> None:
         if self._handle is not None:
@@ -296,25 +326,33 @@ class RelaisController:
 
 
 # --------------------------------------------------------------------------- #
-# CSV-Logging mit Rotation
+# CSV-Logging mit Tagesrotation
 # --------------------------------------------------------------------------- #
 
 @dataclass
 class CsvLogger:
+    """Schreibt Messzeilen in eine CSV-Datei pro Tag (messungen_YYYY-MM-DD.csv).
+
+    Beim Tageswechsel wird automatisch eine neue Datei mit Kopfzeile angelegt und
+    Dateien, die aelter als ``rotations_tage`` sind, werden geloescht - so laeuft die
+    SD-Karte nicht voll. Der Wechsel wird anhand des aktuellen Datums erkannt, nicht
+    anhand der Startzeit; ein Neustart aendert daran nichts.
+    """
     verzeichnis: Path
     prefix: str
     rotations_tage: int
+    aktuelles_datum: date = field(init=False)
     aktuelle_datei: Path = field(init=False)
-    start_datum: datetime = field(init=False)
 
     def __post_init__(self):
         self.verzeichnis.mkdir(parents=True, exist_ok=True)
-        self.start_datum = datetime.now()
-        self.aktuelle_datei = self._dateiname_fuer(self.start_datum)
+        self.aktuelles_datum = date.today()
+        self.aktuelle_datei = self._dateiname_fuer(self.aktuelles_datum)
         self._sicherstellen_datei_existiert(self.aktuelle_datei)
+        self._alte_dateien_aufraeumen()
 
-    def _dateiname_fuer(self, datum: datetime) -> Path:
-        return self.verzeichnis / f"{self.prefix}_{datum.strftime('%Y-%m-%d')}.csv"
+    def _dateiname_fuer(self, tag: date) -> Path:
+        return self.verzeichnis / f"{self.prefix}_{tag.strftime('%Y-%m-%d')}.csv"
 
     def _sicherstellen_datei_existiert(self, pfad: Path) -> None:
         if not pfad.exists():
@@ -325,19 +363,34 @@ class CsvLogger:
             except OSError as exc:
                 logger.error("Konnte CSV-Datei %s nicht anlegen: %s", pfad, exc)
 
-    def _rotation_pruefen(self) -> None:
-        alter = datetime.now() - self.start_datum
-        if alter >= timedelta(days=self.rotations_tage):
-            logger.info(
-                "CSV-Rotation nach %s Tagen: bisherige Datei %s wird archiviert",
-                self.rotations_tage, self.aktuelle_datei,
-            )
-            self.start_datum = datetime.now()
-            self.aktuelle_datei = self._dateiname_fuer(self.start_datum)
+    def _tageswechsel_pruefen(self) -> None:
+        """Wechselt bei neuem Kalendertag auf eine neue Datei und raeumt alte auf."""
+        heute = date.today()
+        if heute != self.aktuelles_datum:
+            self.aktuelles_datum = heute
+            self.aktuelle_datei = self._dateiname_fuer(heute)
             self._sicherstellen_datei_existiert(self.aktuelle_datei)
+            self._alte_dateien_aufraeumen()
+
+    def _alte_dateien_aufraeumen(self) -> None:
+        """Loescht CSV-Dateien, die aelter als ``rotations_tage`` sind."""
+        grenze = date.today() - timedelta(days=self.rotations_tage)
+        for pfad in self.verzeichnis.glob(f"{self.prefix}_*.csv"):
+            try:
+                datum_teil = pfad.stem[len(self.prefix) + 1:]  # "YYYY-MM-DD"
+                dateidatum = datetime.strptime(datum_teil, "%Y-%m-%d").date()
+            except ValueError:
+                continue  # Datei mit unerwartetem Namen nicht anfassen
+            if dateidatum < grenze:
+                try:
+                    pfad.unlink()
+                    logger.info("Alte CSV-Datei geloescht (aelter als %s Tage): %s",
+                                self.rotations_tage, pfad)
+                except OSError as exc:
+                    logger.error("Konnte alte CSV-Datei %s nicht loeschen: %s", pfad, exc)
 
     def zeile_schreiben(self, zeitstempel: datetime, temp1, temp2, relais1_status: bool, relais2_status: bool) -> None:
-        self._rotation_pruefen()
+        self._tageswechsel_pruefen()
         try:
             with self.aktuelle_datei.open("a", newline="", encoding="utf-8") as f:
                 csv.writer(f).writerow([
@@ -589,6 +642,9 @@ def relais_logik_anwenden(temp: Optional[float], relais: RelaisController, schwe
 
 def main() -> None:
     logger.info("Kuehlungssteuerung startet")
+    logger.info("TEST_MODUS=%s -> Reaktionsintervall %d s (Messen/Sollwerte/Tago-Push); "
+                "CSV alle %d s, E-Mail alle %d s",
+                TEST_MODUS, _REAKTION_SEK, CSV_SCHREIB_INTERVALL_SEK, EMAIL_INTERVALL_SEK)
 
     sensor1 = DS18B20Sensor(SENSOR_1_ID, "Sensor1")
     sensor2 = DS18B20Sensor(SENSOR_2_ID, "Sensor2")
@@ -621,6 +677,13 @@ def main() -> None:
     email_timer = Intervall(EMAIL_INTERVALL_SEK, sofort_faellig=False)
 
     try:
+        # Ablauf eines Zyklus:
+        #   1. Sensoren lesen
+        #   2. faellige Sollwerte aus Tago holen (vor der Regel-Logik)
+        #   3. Relais-Regel-Logik (Hysterese) anwenden
+        #   4. Messwert in den Stunden-Puffer legen (fuer die E-Mail-Zusammenfassung)
+        #   5. faellig: CSV schreiben, an Tago pushen, Status-E-Mail senden
+        #   6. Restzeit bis zum naechsten Messzyklus schlafen
         while True:
             schleifen_start = time.monotonic()
 
@@ -659,6 +722,14 @@ def main() -> None:
                 "relais1": relais1.status,
                 "relais2": relais2.status,
             })
+            # Sicherung gegen unbegrenztes Wachsen: bei dauerhaftem E-Mail-Fehler wird der
+            # Puffer nie geleert. Aelteste Eintraege verwerfen, wenn die Grenze ueberschritten ist.
+            if len(stunden_puffer) > MAX_PUFFER_EINTRAEGE:
+                ueberhang = len(stunden_puffer) - MAX_PUFFER_EINTRAEGE
+                del stunden_puffer[:ueberhang]
+                logger.warning("Stunden-Puffer ueber %d Eintraege - %d aelteste verworfen "
+                               "(E-Mail-Versand vermutlich laenger gestoert).",
+                               MAX_PUFFER_EINTRAEGE, ueberhang)
 
             if csv_timer.faellig():
                 try:
