@@ -229,7 +229,10 @@ class RelaisController:
             self._lgpio = lgpio
             self._handle = lgpio.gpiochip_open(chip)
             # Mit definiertem AUS-Zustand starten (Pegel je nach active_high).
-            lgpio.gpio_claim_output(self._handle, gpio_pin, self._pegel(False))
+            # Bias auf DISABLED setzen, damit der Pin seinen Zustand stabil haelt
+            # (ohne Pull-Up/Pull-Down Rueckfall).
+            flags = lgpio.GPIO_LINE_REQUEST_BIAS_DISABLED
+            lgpio.gpio_claim_output(self._handle, gpio_pin, self._pegel(False), flags)
         except Exception as exc:  # pragma: no cover - Hardwareabhaengig
             logger.error("%s: Relais auf GPIO %s (Chip %s) konnte nicht initialisiert werden: %s",
                          name, gpio_pin, chip, exc)
