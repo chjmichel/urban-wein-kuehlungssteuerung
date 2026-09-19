@@ -25,6 +25,20 @@ sowie die beiden optionalen Schalter:
                         sonst schonende 5 Minuten im Normalbetrieb.
   RELAIS_DEBUG=true  -> nach jedem Schaltvorgang zusaetzlich den physischen
                         GPIO-Zustand (gpio_read + pinctrl) ins Log schreiben.
+
+Verzeichnis-/Dateistruktur auf dem Pi (Arbeitsverzeichnis /home/pi/kuehlungssteuerung):
+  kuehlungssteuerung.py       - dieses Hauptprogramm (aus Git)
+  kuehlungssteuerung.service  - Vorlage der systemd-Unit (aktive Kopie: /etc/systemd/system/)
+  requirements.txt            - Python-Abhaengigkeiten: lgpio, requests (aus Git)
+  README.md                   - Kurzbeschreibung (aus Git)
+  .git/                       - Git-Metadaten (nie manuell anfassen; git-Befehle ohne sudo)
+  daten/                      - zur Laufzeit erzeugt: eine CSV pro Tag
+                                (messungen_YYYY-MM-DD.csv); alte Dateien werden geloescht
+  kuehlungssteuerung.log      - zur Laufzeit erzeugte Logdatei (zusaetzlich zu journalctl)
+
+Ausserhalb dieses Verzeichnisses:
+  /etc/kuehlungssteuerung.env             - Zugangsdaten & Schalter (siehe oben, kein Git)
+  /etc/systemd/system/kuehlungssteuerung.service - aktive Dienst-Definition
 """
 
 from __future__ import annotations
