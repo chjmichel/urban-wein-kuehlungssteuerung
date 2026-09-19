@@ -12,11 +12,15 @@ libgpiod-Schnittstelle wie das Kommandozeilen-Tool "gpioset"). Zusaetzlich:
     holt von dort per Fernsteuerung neue Schwellwerte (Sollwerte).
 
 Alle anpassbaren Werte (Sensor-IDs, GPIOs, Schwellwerte, SMTP- und Tago-Zugangsdaten)
-stehen gesammelt im Abschnitt CONFIG. Zugangsdaten und die Schalter TEST_MODUS /
-RELAIS_DEBUG werden aus Umgebungsvariablen gelesen (auf dem Pi ueber
-/etc/kuehlungssteuerung.env, siehe systemd-Unit).
+stehen gesammelt im Abschnitt CONFIG.
 
-Umgebungsvariablen-Schalter:
+Umgebungsvariablen (Zugangsdaten und Schalter) werden aus der Datei
+    /etc/kuehlungssteuerung.env
+gelesen. Diese Datei liegt ausserhalb des Repos (kein Git) und wird von der
+systemd-Unit ueber "EnvironmentFile=" eingelesen. Sie enthaelt u.a.:
+  SMTP_SERVER, SMTP_PORT, SMTP_USE_SSL, SMTP_LOGIN, SMTP_PASSWORT,
+  EMAIL_ABSENDER, EMAIL_EMPFAENGER, TAGO_DEVICE_TOKEN
+sowie die beiden optionalen Schalter:
   TEST_MODUS=true    -> schnelle Reaktionsintervalle (~1 min) zum Testen,
                         sonst schonende 5 Minuten im Normalbetrieb.
   RELAIS_DEBUG=true  -> nach jedem Schaltvorgang zusaetzlich den physischen
