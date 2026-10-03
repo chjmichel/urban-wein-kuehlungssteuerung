@@ -19,7 +19,7 @@ Umgebungsvariablen (Zugangsdaten und Schalter) werden aus der Datei
 gelesen. Diese Datei liegt ausserhalb des Repos (kein Git) und wird von der
 systemd-Unit ueber "EnvironmentFile=" eingelesen. Sie enthaelt u.a.:
   SMTP_SERVER, SMTP_PORT, SMTP_USE_SSL, SMTP_LOGIN, SMTP_PASSWORT,
-  EMAIL_ABSENDER, EMAIL_EMPFAENGER, TAGO_DEVICE_TOKEN
+  EMAIL_ABSENDER, EMAIL_EMPFAENGER, EMAIL_INTERVALL_MIN, TAGO_DEVICE_TOKEN
 sowie die beiden optionalen Schalter:
   TEST_MODUS=true    -> schnelle Reaktionsintervalle (~1 min) zum Testen,
                         sonst schonende 5 Minuten im Normalbetrieb.
@@ -103,7 +103,6 @@ _REAKTION_SEK = 60 if TEST_MODUS else 5 * 60
 
 MESS_INTERVALL_SEK = _REAKTION_SEK          # wie oft die Sensoren gelesen werden
 CSV_SCHREIB_INTERVALL_SEK = 5 * 60          # wie oft eine CSV-Zeile geschrieben wird (fix: 5 Minuten)
-EMAIL_INTERVALL_SEK = 60 * 60               # wie oft eine Status-E-Mail verschickt wird (fix: 1 Stunde)
 CSV_ROTATIONS_TAGE = 28                     # Aufbewahrungsdauer der CSV-Dateien (4 Wochen), danach loeschen
 
 # --- CSV ---------------------------------------------------------------------
@@ -131,6 +130,7 @@ LOG_LEVEL = logging.INFO
 #   SMTP_PASSWORT=geheim
 #   EMAIL_ABSENDER=absender@example.com
 #   EMAIL_EMPFAENGER=a@example.com,b@example.com   (mehrere durch Komma trennen)
+#   EMAIL_INTERVALL_MIN=60                         (E-Mail-Versand alle N Minuten; Default: 60)
 SMTP_SERVER = os.environ.get("SMTP_SERVER", "")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USE_SSL = os.environ.get("SMTP_USE_SSL", "false").strip().lower() in ("1", "true", "yes", "ja")
@@ -138,6 +138,8 @@ SMTP_LOGIN = os.environ.get("SMTP_LOGIN", "")
 SMTP_PASSWORT = os.environ.get("SMTP_PASSWORT", "")
 EMAIL_ABSENDER = os.environ.get("EMAIL_ABSENDER", SMTP_LOGIN)
 EMAIL_EMPFAENGER = [a.strip() for a in os.environ.get("EMAIL_EMPFAENGER", "").split(",") if a.strip()]
+EMAIL_INTERVALL_MIN = int(os.environ.get("EMAIL_INTERVALL_MIN", "60"))  # aus env in Minuten
+EMAIL_INTERVALL_SEK = EMAIL_INTERVALL_MIN * 60  # intern in Sekunden
 EMAIL_BETREFF_PREFIX = "Weinkuehlung Status"
 # Obergrenze fuer den Messwert-Puffer der stuendlichen Zusammenfassung. Er wird nur
 # geleert, wenn die E-Mail erfolgreich raus ist - bei dauerhaftem WLAN-Verlust wuerde
