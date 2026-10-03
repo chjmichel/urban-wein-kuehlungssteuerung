@@ -7,24 +7,26 @@ ueber GPIO (Hysterese-Regelung). Die GPIO-Ansteuerung erfolgt ueber lgpio (diese
 libgpiod-Schnittstelle wie das Kommandozeilen-Tool "gpioset"). Zusaetzlich:
   - schreibt regelmaessig einen Datensatz in eine tagesweise rotierende CSV-Datei
     (alte Dateien werden nach CSV_ROTATIONS_TAGE automatisch geloescht),
-  - verschickt stuendlich eine Statusmail inkl. aktueller CSV als Anhang,
+  - verschickt regelmaessig eine Statusmail inkl. aktueller CSV als Anhang
+    (Intervall und Ein/Aus konfigurierbar),
   - pusht die Messwerte und aktiven Schwellwerte an ein Tago.io-Dashboard und
     holt von dort per Fernsteuerung neue Schwellwerte (Sollwerte).
 
 Alle anpassbaren Werte (Sensor-IDs, GPIOs, Schwellwerte, SMTP- und Tago-Zugangsdaten)
-stehen gesammelt im Abschnitt CONFIG.
+stehen gesammelt im Abschnitt CONFIG. Zusaetzlich werden Zugangsdaten und Schalter
+aus der Datei /etc/kuehlungssteuerung.env gelesen (siehe unten).
 
-Umgebungsvariablen (Zugangsdaten und Schalter) werden aus der Datei
-    /etc/kuehlungssteuerung.env
-gelesen. Diese Datei liegt ausserhalb des Repos (kein Git) und wird von der
-systemd-Unit ueber "EnvironmentFile=" eingelesen. Sie enthaelt u.a.:
+Umgebungsvariablen: Die Datei /etc/kuehlungssteuerung.env liegt ausserhalb des
+Repos (kein Git) und wird von der systemd-Unit ueber "EnvironmentFile=" eingelesen.
+Sie enthaelt u.a.:
   SMTP_SERVER, SMTP_PORT, SMTP_USE_SSL, SMTP_LOGIN, SMTP_PASSWORT,
-  EMAIL_ABSENDER, EMAIL_EMPFAENGER, EMAIL_INTERVALL_MIN, EMAIL_ENABLED, TAGO_DEVICE_TOKEN
-sowie die beiden optionalen Schalter:
-  TEST_MODUS=true    -> schnelle Reaktionsintervalle (~1 min) zum Testen,
-                        sonst schonende 5 Minuten im Normalbetrieb.
-  RELAIS_DEBUG=true  -> nach jedem Schaltvorgang zusaetzlich den physischen
-                        GPIO-Zustand (gpio_read + pinctrl) ins Log schreiben.
+  EMAIL_ABSENDER, EMAIL_EMPFAENGER, EMAIL_INTERVALL_MIN, EMAIL_ENABLED,
+  TAGO_DEVICE_TOKEN
+sowie optionale Schalter:
+  TEST_MODUS=true/false      -> schnelle Reaktionsintervalle (~1 min) zum Testen
+                                (Default: false, dann 5 Minuten im Normalbetrieb)
+  RELAIS_DEBUG=true/false    -> nach jedem Schaltvorgang physischen GPIO-Zustand
+                                (gpio_read + pinctrl) ins Log schreiben (Default: false)
 
 Verzeichnis-/Dateistruktur auf dem Pi (Arbeitsverzeichnis /home/pi/kuehlungssteuerung):
   kuehlungssteuerung.py       - dieses Hauptprogramm (aus Git)
@@ -98,6 +100,10 @@ TEMP2_SCHWELLE_AUS = 15.5  # Relais 2 ausschalten, wenn Temp2 < diesem Wert (Hys
 # schaltet die drei "Reaktionsintervalle" auf schnelle 60 s, damit Aenderungen im
 # Dashboard beim Testen zuegig sichtbar werden. Ohne TEST_MODUS gelten die schonenden
 # 5 Minuten (weniger Sensor-/Netzlast, laengere SD-Karten-Lebensdauer).
+#
+# CSV_SCHREIB_INTERVALL_SEK und EMAIL_INTERVALL_SEK sind unabhaengig davon (nicht
+# vom TEST_MODUS beeinflusst). EMAIL_INTERVALL_MIN wird aus /etc/kuehlungssteuerung.env
+# gelesen und ist intern zur Sicherheit in Sekunden.
 TEST_MODUS = os.environ.get("TEST_MODUS", "false").strip().lower() in ("1", "true", "yes", "ja")
 _REAKTION_SEK = 60 if TEST_MODUS else 5 * 60
 
@@ -435,9 +441,10 @@ def sende_status_email(csv_logger: CsvLogger, messwerte_letzte_stunde: list) -> 
     """Verschickt eine Zusammenfassung der letzten Stunde inkl. aktueller CSV als Anhang.
 
     Gibt True zurueck, wenn die E-Mail versendet wurde, sonst False (z.B. bei WLAN-Verlust).
+    Hinweis: Diese Funktion wird nur aufgerufen, wenn EMAIL_ENABLED=on ist.
     """
     # Ohne konfigurierte Zugangsdaten (env-Datei fehlt/unvollstaendig) gar nicht erst
-    # versuchen zu senden - sonst gaebe es jede Stunde einen Login-Fehler im Log.
+    # versuchen zu senden - sonst gaebe es bei jedem E-Mail-Intervall einen Login-Fehler im Log.
     if not (SMTP_SERVER and EMAIL_EMPFAENGER and SMTP_PASSWORT):
         logger.warning(
             "E-Mail nicht konfiguriert (SMTP_SERVER/EMAIL_EMPFAENGER/SMTP_PASSWORT fehlen) "
@@ -695,7 +702,8 @@ def main() -> None:
     csv_timer = Intervall(CSV_SCHREIB_INTERVALL_SEK)
     tago_push_timer = Intervall(TAGO_PUSH_INTERVALL_SEK)
     # E-Mail bewusst NICHT sofort beim Start senden: sonst kaeme nach jedem
-    # (Neu-)Start eine Zusammenfassung mit nur einem Messpunkt.
+    # (Neu-)Start eine Zusammenfassung mit nur einem Messpunkt. Das Intervall wird
+    # aus /etc/kuehlungssteuerung.env gelesen (EMAIL_INTERVALL_MIN, Default: 60 min).
     email_timer = Intervall(EMAIL_INTERVALL_SEK, sofort_faellig=False)
 
     try:
@@ -705,6 +713,7 @@ def main() -> None:
         #   3. Relais-Regel-Logik (Hysterese) anwenden
         #   4. Messwert in den Stunden-Puffer legen (fuer die E-Mail-Zusammenfassung)
         #   5. faellig: CSV schreiben, an Tago pushen, Status-E-Mail senden
+        #      (E-Mail nur, wenn EMAIL_ENABLED=on ist; Intervall aus EMAIL_INTERVALL_MIN)
         #   6. Restzeit bis zum naechsten Messzyklus schlafen
         while True:
             schleifen_start = time.monotonic()
