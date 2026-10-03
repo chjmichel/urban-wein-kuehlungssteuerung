@@ -90,6 +90,7 @@ SMTP_PASSWORT=geheim
 EMAIL_ABSENDER=absender@example.com
 EMAIL_EMPFAENGER=a@example.com,b@example.com   # mehrere durch Komma trennen, KEINE Klammern/Anführungszeichen
 EMAIL_INTERVALL_MIN=60                          # E-Mail-Versand alle N Minuten
+EMAIL_ENABLED=true                              # E-Mail-Versand ein/aus
 
 # Tago.io
 TAGO_DEVICE_TOKEN=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
@@ -106,6 +107,7 @@ RELAIS_DEBUG=false    # true = GPIO-Zustand (gpio_read + pinctrl) nach jedem Sch
 | `EMAIL_ABSENDER` | Absenderadresse (Default: `SMTP_LOGIN`). |
 | `EMAIL_EMPFAENGER` | Empfänger, mehrere per Komma. |
 | `EMAIL_INTERVALL_MIN` | E-Mail-Versand alle N Minuten (Default: 60). |
+| `EMAIL_ENABLED` | E-Mail-Versand aktivieren/deaktivieren (Default: `true`). |
 | `TAGO_DEVICE_TOKEN` | Device-Token des Tago.io-Geräts. |
 | `TEST_MODUS` | `true` → Mess-/Sollwert-/Push-Intervall 60 s statt 5 min. |
 | `RELAIS_DEBUG` | `true` → physischen GPIO-Zustand nach jedem Schalten loggen. |

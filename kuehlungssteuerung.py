@@ -19,7 +19,7 @@ Umgebungsvariablen (Zugangsdaten und Schalter) werden aus der Datei
 gelesen. Diese Datei liegt ausserhalb des Repos (kein Git) und wird von der
 systemd-Unit ueber "EnvironmentFile=" eingelesen. Sie enthaelt u.a.:
   SMTP_SERVER, SMTP_PORT, SMTP_USE_SSL, SMTP_LOGIN, SMTP_PASSWORT,
-  EMAIL_ABSENDER, EMAIL_EMPFAENGER, EMAIL_INTERVALL_MIN, TAGO_DEVICE_TOKEN
+  EMAIL_ABSENDER, EMAIL_EMPFAENGER, EMAIL_INTERVALL_MIN, EMAIL_ENABLED, TAGO_DEVICE_TOKEN
 sowie die beiden optionalen Schalter:
   TEST_MODUS=true    -> schnelle Reaktionsintervalle (~1 min) zum Testen,
                         sonst schonende 5 Minuten im Normalbetrieb.
@@ -131,6 +131,7 @@ LOG_LEVEL = logging.INFO
 #   EMAIL_ABSENDER=absender@example.com
 #   EMAIL_EMPFAENGER=a@example.com,b@example.com   (mehrere durch Komma trennen)
 #   EMAIL_INTERVALL_MIN=60                         (E-Mail-Versand alle N Minuten; Default: 60)
+#   EMAIL_ENABLED=true                             (E-Mail-Versand ein/aus; Default: true)
 SMTP_SERVER = os.environ.get("SMTP_SERVER", "")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USE_SSL = os.environ.get("SMTP_USE_SSL", "false").strip().lower() in ("1", "true", "yes", "ja")
@@ -140,6 +141,7 @@ EMAIL_ABSENDER = os.environ.get("EMAIL_ABSENDER", SMTP_LOGIN)
 EMAIL_EMPFAENGER = [a.strip() for a in os.environ.get("EMAIL_EMPFAENGER", "").split(",") if a.strip()]
 EMAIL_INTERVALL_MIN = int(os.environ.get("EMAIL_INTERVALL_MIN", "60"))  # aus env in Minuten
 EMAIL_INTERVALL_SEK = EMAIL_INTERVALL_MIN * 60  # intern in Sekunden
+EMAIL_ENABLED = os.environ.get("EMAIL_ENABLED", "true").strip().lower() in ("1", "true", "yes", "ja")
 EMAIL_BETREFF_PREFIX = "Weinkuehlung Status"
 # Obergrenze fuer den Messwert-Puffer der stuendlichen Zusammenfassung. Er wird nur
 # geleert, wenn die E-Mail erfolgreich raus ist - bei dauerhaftem WLAN-Verlust wuerde
@@ -663,8 +665,8 @@ def relais_logik_anwenden(temp: Optional[float], relais: RelaisController, schwe
 def main() -> None:
     logger.info("Kuehlungssteuerung startet")
     logger.info("TEST_MODUS=%s -> Reaktionsintervall %d s (Messen/Sollwerte/Tago-Push); "
-                "CSV alle %d s, E-Mail alle %d s",
-                TEST_MODUS, _REAKTION_SEK, CSV_SCHREIB_INTERVALL_SEK, EMAIL_INTERVALL_SEK)
+                "CSV alle %d s, E-Mail alle %d s (EMAIL_ENABLED=%s)",
+                TEST_MODUS, _REAKTION_SEK, CSV_SCHREIB_INTERVALL_SEK, EMAIL_INTERVALL_SEK, EMAIL_ENABLED)
 
     sensor1 = DS18B20Sensor(SENSOR_1_ID, "Sensor1")
     sensor2 = DS18B20Sensor(SENSOR_2_ID, "Sensor2")
@@ -765,10 +767,13 @@ def main() -> None:
 
             if email_timer.faellig():
                 erfolg = False
-                try:
-                    erfolg = sende_status_email(csv_logger, stunden_puffer)
-                except Exception as exc:
-                    logger.error("Unerwarteter Fehler beim E-Mail-Versand: %s", exc)
+                if EMAIL_ENABLED:
+                    try:
+                        erfolg = sende_status_email(csv_logger, stunden_puffer)
+                    except Exception as exc:
+                        logger.error("Unerwarteter Fehler beim E-Mail-Versand: %s", exc)
+                else:
+                    logger.debug("E-Mail-Versand deaktiviert (EMAIL_ENABLED=false)")
                 # Puffer nur leeren, wenn die E-Mail wirklich raus ist – sonst gingen die
                 # Messwerte der letzten Stunde bei WLAN-Verlust verloren.
                 if erfolg:
