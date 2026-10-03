@@ -131,7 +131,7 @@ LOG_LEVEL = logging.INFO
 #   EMAIL_ABSENDER=absender@example.com
 #   EMAIL_EMPFAENGER=a@example.com,b@example.com   (mehrere durch Komma trennen)
 #   EMAIL_INTERVALL_MIN=60                         (E-Mail-Versand alle N Minuten; Default: 60)
-#   EMAIL_ENABLED=true                             (E-Mail-Versand ein/aus; Default: true)
+#   EMAIL_ENABLED=on                              (E-Mail-Versand ein/aus; Default: on)
 SMTP_SERVER = os.environ.get("SMTP_SERVER", "")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USE_SSL = os.environ.get("SMTP_USE_SSL", "false").strip().lower() in ("1", "true", "yes", "ja")
@@ -141,7 +141,7 @@ EMAIL_ABSENDER = os.environ.get("EMAIL_ABSENDER", SMTP_LOGIN)
 EMAIL_EMPFAENGER = [a.strip() for a in os.environ.get("EMAIL_EMPFAENGER", "").split(",") if a.strip()]
 EMAIL_INTERVALL_MIN = int(os.environ.get("EMAIL_INTERVALL_MIN", "60"))  # aus env in Minuten
 EMAIL_INTERVALL_SEK = EMAIL_INTERVALL_MIN * 60  # intern in Sekunden
-EMAIL_ENABLED = os.environ.get("EMAIL_ENABLED", "true").strip().lower() in ("1", "true", "yes", "ja")
+EMAIL_ENABLED = os.environ.get("EMAIL_ENABLED", "on").strip().lower() in ("1", "on", "yes", "ja")
 EMAIL_BETREFF_PREFIX = "Weinkuehlung Status"
 # Obergrenze fuer den Messwert-Puffer der stuendlichen Zusammenfassung. Er wird nur
 # geleert, wenn die E-Mail erfolgreich raus ist - bei dauerhaftem WLAN-Verlust wuerde
