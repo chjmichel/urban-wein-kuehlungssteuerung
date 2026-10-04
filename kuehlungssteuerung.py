@@ -128,16 +128,31 @@ LOG_LEVEL = logging.INFO
 
 # --- SMTP / E-Mail -------------------------------------------------------------
 # Zugangsdaten NICHT im Code speichern: aus Umgebungsvariablen laden. Auf dem Pi
-# werden sie ueber /etc/kuehlungssteuerung.env gesetzt (siehe systemd-Unit), z.B.:
+# werden sie ueber /etc/kuehlungssteuerung.env gesetzt (siehe systemd-Unit).
+# Aufbau der env-Datei (Kommentare immer in eigener Zeile, nie hinter Werten!):
+#
+#   # Tago
+#   TAGO_DEVICE_TOKEN=<Tago-Token>
+#
+#   # Email
 #   SMTP_SERVER=smtp.strato.de
 #   SMTP_PORT=465
 #   SMTP_USE_SSL=true
-#   SMTP_LOGIN=absender@example.com
-#   SMTP_PASSWORT=geheim
-#   EMAIL_ABSENDER=absender@example.com
-#   EMAIL_EMPFAENGER=a@example.com,b@example.com   (mehrere durch Komma trennen)
-#   EMAIL_INTERVALL_MIN=60                         (E-Mail-Versand alle N Minuten; Default: 60)
-#   EMAIL_ENABLED=on                              (E-Mail-Versand ein/aus; Default: on)
+#   SMTP_LOGIN=<SMTP-User>
+#   SMTP_PASSWORT=<SMTP-Passwort>
+#   # zum Ein-/Ausschalten: on/off
+#   EMAIL_ENABLED=on
+#   # nicht aendern!
+#   EMAIL_ABSENDER=<SMTP-User>
+#   EMAIL_EMPFAENGER=<Adressen, Komma-getrennt>
+#   # default: 60min
+#   EMAIL_INTERVALL_MIN=240
+#
+#   # Test und Debugging
+#   # zum Ein-/Ausschalten: true/false
+#   TEST_MODUS=false
+#   # zum Ein-/Ausschalten: true/false
+#   RELAIS_DEBUG=false
 SMTP_SERVER = os.environ.get("SMTP_SERVER", "")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587").split("#")[0].strip())
 SMTP_USE_SSL = os.environ.get("SMTP_USE_SSL", "false").strip().lower() in ("1", "true", "yes", "ja")
