@@ -21,6 +21,7 @@ Repos (kein Git) und wird von der systemd-Unit ueber "EnvironmentFile=" eingeles
 Sie enthaelt u.a.:
   SMTP_SERVER, SMTP_PORT, SMTP_USE_SSL, SMTP_LOGIN, SMTP_PASSWORT,
   EMAIL_ABSENDER, EMAIL_EMPFAENGER, EMAIL_INTERVALL_MIN, EMAIL_ENABLED,
+  CSV_SCHREIB_INTERVALL_MIN, CSV_ROTATIONS_TAGE,
   TAGO_DEVICE_TOKEN
 sowie optionale Schalter:
   TEST_MODUS=true/false      -> schnelle Reaktionsintervalle (~1 min) zum Testen
@@ -101,15 +102,16 @@ TEMP2_SCHWELLE_AUS = 15.5  # Relais 2 ausschalten, wenn Temp2 < diesem Wert (Hys
 # Dashboard beim Testen zuegig sichtbar werden. Ohne TEST_MODUS gelten die schonenden
 # 5 Minuten (weniger Sensor-/Netzlast, laengere SD-Karten-Lebensdauer).
 #
-# CSV_SCHREIB_INTERVALL_SEK und EMAIL_INTERVALL_SEK sind unabhaengig davon (nicht
-# vom TEST_MODUS beeinflusst). EMAIL_INTERVALL_MIN wird aus /etc/kuehlungssteuerung.env
-# gelesen und ist intern zur Sicherheit in Sekunden.
+# CSV_SCHREIB_INTERVALL_MIN, CSV_ROTATIONS_TAGE und EMAIL_INTERVALL_MIN werden aus
+# /etc/kuehlungssteuerung.env gelesen; int-Werte tolerieren Inline-Kommentare nicht
+# (systemd uebergibt sie als Teil des Wertes) - daher split("#") als Schutz.
 TEST_MODUS = os.environ.get("TEST_MODUS", "false").strip().lower() in ("1", "true", "yes", "ja")
 _REAKTION_SEK = 60 if TEST_MODUS else 5 * 60
 
 MESS_INTERVALL_SEK = _REAKTION_SEK          # wie oft die Sensoren gelesen werden
-CSV_SCHREIB_INTERVALL_SEK = 5 * 60          # wie oft eine CSV-Zeile geschrieben wird (fix: 5 Minuten)
-CSV_ROTATIONS_TAGE = 28                     # Aufbewahrungsdauer der CSV-Dateien (4 Wochen), danach loeschen
+CSV_SCHREIB_INTERVALL_MIN = int(os.environ.get("CSV_SCHREIB_INTERVALL_MIN", "5").split("#")[0].strip())  # aus env in Minuten
+CSV_SCHREIB_INTERVALL_SEK = CSV_SCHREIB_INTERVALL_MIN * 60  # intern in Sekunden
+CSV_ROTATIONS_TAGE = int(os.environ.get("CSV_ROTATIONS_TAGE", "28").split("#")[0].strip())  # Aufbewahrungsdauer in Tagen
 
 # --- CSV ---------------------------------------------------------------------
 DATEN_VERZEICHNIS = Path("/home/pi/kuehlungssteuerung/daten")  # TODO: ggf. anpassen
@@ -148,6 +150,12 @@ LOG_LEVEL = logging.INFO
 #   EMAIL_EMPFAENGER=a@example.com,b@example.com
 #   # default: 60min
 #   EMAIL_INTERVALL_MIN=240
+#
+#   #CSV
+#   # default: 5min
+#   CSV_SCHREIB_INTERVALL_MIN=5
+#   # Aufbewahrungsdauer in Tagen, default: 28
+#   CSV_ROTATIONS_TAGE=28
 #
 #   #Test und Debugging
 #   # zum Ein-/Ausschalten: true/false, schnelle Reaktionsintervalle zum Testen

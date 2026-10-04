@@ -99,6 +99,12 @@ EMAIL_EMPFAENGER=a@example.com,b@example.com
 # default: 60min
 EMAIL_INTERVALL_MIN=240
 
+#CSV
+# default: 5min
+CSV_SCHREIB_INTERVALL_MIN=5
+# Aufbewahrungsdauer in Tagen, default: 28
+CSV_ROTATIONS_TAGE=28
+
 #Test und Debugging
 # zum Ein-/Ausschalten: true/false, schnelle Reaktionsintervalle zum Testen
 TEST_MODUS=true
@@ -116,6 +122,8 @@ RELAIS_DEBUG=true
 | `EMAIL_EMPFAENGER` | Empfänger, mehrere per Komma. |
 | `EMAIL_INTERVALL_MIN` | E-Mail-Versand alle N Minuten (Default: 60). |
 | `EMAIL_ENABLED` | E-Mail-Versand aktivieren/deaktivieren (Default: `on`). |
+| `CSV_SCHREIB_INTERVALL_MIN` | CSV-Schreibtakt in Minuten (Default: 5). |
+| `CSV_ROTATIONS_TAGE` | Aufbewahrungsdauer der CSV-Dateien in Tagen (Default: 28). |
 | `TAGO_DEVICE_TOKEN` | Device-Token des Tago.io-Geräts. |
 | `TEST_MODUS` | `true` → Mess-/Sollwert-/Push-Intervall 60 s statt 5 min. |
 | `RELAIS_DEBUG` | `true` → physischen GPIO-Zustand nach jedem Schalten loggen. |
