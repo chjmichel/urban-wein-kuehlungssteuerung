@@ -131,28 +131,29 @@ LOG_LEVEL = logging.INFO
 # werden sie ueber /etc/kuehlungssteuerung.env gesetzt (siehe systemd-Unit).
 # Aufbau der env-Datei (Kommentare immer in eigener Zeile, nie hinter Werten!):
 #
-#   # Tago
-#   TAGO_DEVICE_TOKEN=<Tago-Token>
+#   #Tago
+#   TAGO_DEVICE_TOKEN=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 #
-#   # Email
+#   #Email
 #   SMTP_SERVER=smtp.strato.de
 #   SMTP_PORT=465
 #   SMTP_USE_SSL=true
-#   SMTP_LOGIN=<SMTP-User>
-#   SMTP_PASSWORT=<SMTP-Passwort>
+#   SMTP_LOGIN=absender@example.com
+#   SMTP_PASSWORT=<pwd>
+#
 #   # zum Ein-/Ausschalten: on/off
 #   EMAIL_ENABLED=on
-#   # nicht aendern!
-#   EMAIL_ABSENDER=<SMTP-User>
-#   EMAIL_EMPFAENGER=<Adressen, Komma-getrennt>
+#   EMAIL_ABSENDER=absender@example.com
+#   # mehrere durch Komma trennen, KEINE Klammern/Anfuehrungszeichen
+#   EMAIL_EMPFAENGER=a@example.com,b@example.com
 #   # default: 60min
 #   EMAIL_INTERVALL_MIN=240
 #
-#   # Test und Debugging
-#   # zum Ein-/Ausschalten: true/false
-#   TEST_MODUS=false
-#   # zum Ein-/Ausschalten: true/false
-#   RELAIS_DEBUG=false
+#   #Test und Debugging
+#   # zum Ein-/Ausschalten: true/false, schnelle Reaktionsintervalle zum Testen
+#   TEST_MODUS=true
+#   # zum Ein-/Ausschalten: true/false, gpio_read + pinctrl werden geloggt
+#   RELAIS_DEBUG=true
 SMTP_SERVER = os.environ.get("SMTP_SERVER", "")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587").split("#")[0].strip())
 SMTP_USE_SSL = os.environ.get("SMTP_USE_SSL", "false").strip().lower() in ("1", "true", "yes", "ja")

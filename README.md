@@ -81,28 +81,29 @@ Diese Datei liegt bewusst **außerhalb des Repos**, damit keine Geheimnisse ins 
 gelangen. Die systemd-Unit lädt sie über `EnvironmentFile=`. Beispiel:
 
 ```ini
-# Tago
-TAGO_DEVICE_TOKEN=<Tago-Token>
+#Tago
+TAGO_DEVICE_TOKEN=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 
-# Email
+#Email
 SMTP_SERVER=smtp.strato.de
 SMTP_PORT=465
 SMTP_USE_SSL=true
-SMTP_LOGIN=<SMTP-User>
-SMTP_PASSWORT=<SMTP-Passwort>
+SMTP_LOGIN=absender@example.com
+SMTP_PASSWORT=<pwd>
+
 # zum Ein-/Ausschalten: on/off
 EMAIL_ENABLED=on
-# nicht ändern!
-EMAIL_ABSENDER=<SMTP-User>
-EMAIL_EMPFAENGER=<E-Mail-Adressen, durch Komma getrennt, kein Leerzeichen>
+EMAIL_ABSENDER=absender@example.com
+# mehrere durch Komma trennen, KEINE Klammern/Anführungszeichen
+EMAIL_EMPFAENGER=a@example.com,b@example.com
 # default: 60min
 EMAIL_INTERVALL_MIN=240
 
-# Test und Debugging
-# zum Ein-/Ausschalten: true/false
-TEST_MODUS=false
-# zum Ein-/Ausschalten: true/false
-RELAIS_DEBUG=false
+#Test und Debugging
+# zum Ein-/Ausschalten: true/false, schnelle Reaktionsintervalle zum Testen
+TEST_MODUS=true
+# zum Ein-/Ausschalten: true/false, gpio_read + pinctrl werden geloggt
+RELAIS_DEBUG=true
 ```
 
 > **Hinweis:** Kommentare in systemd `EnvironmentFile` immer in einer **eigenen Zeile** (mit `#` am Anfang), **nie** hinter einem Wert — systemd würde den Kommentar sonst als Teil des Wertes übergeben.
