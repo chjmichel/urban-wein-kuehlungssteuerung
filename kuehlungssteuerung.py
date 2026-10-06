@@ -7,9 +7,10 @@ ueber GPIO (Hysterese-Regelung). Die GPIO-Ansteuerung erfolgt ueber lgpio (diese
 libgpiod-Schnittstelle wie das Kommandozeilen-Tool "gpioset"). Zusaetzlich:
   - schreibt regelmaessig einen Datensatz in eine tagesweise rotierende CSV-Datei
     (alte Dateien werden nach CSV_ROTATIONS_TAGE automatisch geloescht),
-  - verschickt beim Start (60 s verzoegert, inkl. Systemlog) und danach im
-    konfigurierbaren Intervall eine Statusmail inkl. aktueller CSV als Anhang
-    (Intervall und Ein/Aus konfigurierbar ueber EMAIL_INTERVALL_MIN / EMAIL_ENABLED),
+  - verschickt beim Start (60 s verzoegert, inkl. WLAN-Status, Signalstaerke und
+    Systemlog) und danach im konfigurierbaren Intervall eine Statusmail inkl.
+    aktueller CSV als Anhang (Intervall und Ein/Aus konfigurierbar ueber
+    EMAIL_INTERVALL_MIN / EMAIL_ENABLED),
   - pusht die Messwerte und aktiven Schwellwerte an ein Tago.io-Dashboard und
     holt von dort per Fernsteuerung neue Schwellwerte (Sollwerte).
 
@@ -746,7 +747,8 @@ def main() -> None:
         #   4. Messwert in den Stunden-Puffer legen (fuer die E-Mail-Zusammenfassung)
         #   5. faellig: CSV schreiben, an Tago pushen, regulaere Status-E-Mail senden
         #      (E-Mail nur wenn EMAIL_ENABLED=on; Intervall aus EMAIL_INTERVALL_MIN)
-        #   5b. Start-E-Mail: einmalig 60 s nach Start mit journalctl-Ausgabe
+        #   5b. Start-E-Mail: einmalig 60 s nach Start mit WLAN-Status,
+        #       Signalstaerke (iwconfig + nmcli) und journalctl-Ausgabe
         #   6. Restzeit bis zum naechsten Messzyklus schlafen
         while True:
             schleifen_start = time.monotonic()

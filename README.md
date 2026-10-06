@@ -15,8 +15,9 @@ Tago.io-Dashboard gesendet, von dem aus sich die Sollwerte fernsteuern lassen.
   damit die Pumpen nicht ständig takten.
 - **CSV-Logging**: eine Datei pro Tag (`daten/messungen_YYYY-MM-DD.csv`); Dateien
   älter als `CSV_ROTATIONS_TAGE` werden automatisch gelöscht (konfigurierbar, Default 28 Tage).
-- **Status-E-Mail**: beim Start (60 s verzögert, inkl. Systemlog) und danach im
-  konfigurierbaren Intervall (`EMAIL_INTERVALL_MIN`); kann per `EMAIL_ENABLED` deaktiviert werden.
+- **Status-E-Mail**: beim Start (60 s verzögert, inkl. WLAN-Status, Signalstärke und
+  Systemlog) und danach im konfigurierbaren Intervall (`EMAIL_INTERVALL_MIN`);
+  kann per `EMAIL_ENABLED` deaktiviert werden.
 - **Tago.io**: Push der Messwerte + aktiver Schwellwerte; Abruf neuer Sollwerte aus
   dem Dashboard (Fernsteuerung ohne Neustart).
 
