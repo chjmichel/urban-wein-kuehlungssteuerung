@@ -730,19 +730,12 @@ def main() -> None:
     sollwert_timer = Intervall(TAGO_SOLLWERT_INTERVALL_SEK)
     csv_timer = Intervall(CSV_SCHREIB_INTERVALL_SEK)
     tago_push_timer = Intervall(TAGO_PUSH_INTERVALL_SEK)
-    # Naechste regulaere Status-E-Mail erst nach EMAIL_INTERVALL_MIN (nicht sofort),
-    # da beim Start bereits eine separate Start-E-Mail verschickt wird.
+    # Regulaere Status-E-Mail: nicht sofort, da Start-E-Mail separat verschickt wird.
     email_timer = Intervall(EMAIL_INTERVALL_SEK, sofort_faellig=False)
-
-    # Start-E-Mail sofort senden (unabhaengig vom regulaeren Intervall)
-    if EMAIL_ENABLED:
-        try:
-            sende_status_email(
-                csv_logger, [],
-                startmeldung="Kuehlungssteuerung wurde so eben gestartet."
-            )
-        except Exception as exc:
-            logger.error("Start-E-Mail konnte nicht gesendet werden: %s", exc)
+    # Start-E-Mail: einmalig nach 60 s (damit das System Zeit hat, sich zu stabilisieren
+    # und der journalctl-Output bereits die Startsequenz enthaelt).
+    start_email_timer = Intervall(60, sofort_faellig=False)
+    start_email_gesendet = False
 
     try:
         # Ablauf eines Zyklus:
@@ -825,6 +818,26 @@ def main() -> None:
                 # Messwerte der letzten Stunde bei WLAN-Verlust verloren.
                 if erfolg:
                     stunden_puffer = []
+
+            # Start-E-Mail: einmalig 60 s nach dem Start, mit journalctl-Ausgabe
+            if EMAIL_ENABLED and not start_email_gesendet and start_email_timer.faellig():
+                try:
+                    journal = subprocess.run(
+                        ["journalctl", "-u", "kuehlungssteuerung", "-n", "60", "--no-pager"],
+                        capture_output=True, text=True, timeout=10
+                    )
+                    journal_text = journal.stdout if journal.returncode == 0 else "(journalctl nicht verfuegbar)"
+                    sende_status_email(
+                        csv_logger, stunden_puffer,
+                        startmeldung=(
+                            "Kuehlungssteuerung wurde so eben gestartet.\n\n"
+                            "--- Systemlog (letzte 60 Zeilen) ---\n"
+                            f"{journal_text}"
+                        )
+                    )
+                    start_email_gesendet = True
+                except Exception as exc:
+                    logger.error("Start-E-Mail konnte nicht gesendet werden: %s", exc)
 
             # Bis zum naechsten Messzyklus warten. Es wird nur die Restzeit geschlafen,
             # damit die tatsaechliche Auslesefrequenz nahe an MESS_INTERVALL_SEK bleibt.
