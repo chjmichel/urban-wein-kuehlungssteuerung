@@ -461,11 +461,14 @@ class CsvLogger:
 # E-Mail-Versand
 # --------------------------------------------------------------------------- #
 
-def sende_status_email(csv_logger: CsvLogger, messwerte_letzte_stunde: list) -> bool:
+def sende_status_email(csv_logger: CsvLogger, messwerte_letzte_stunde: list,
+                       startmeldung: str = "") -> bool:
     """Verschickt eine Zusammenfassung der letzten Stunde inkl. aktueller CSV als Anhang.
 
     Gibt True zurueck, wenn die E-Mail versendet wurde, sonst False (z.B. bei WLAN-Verlust).
     Hinweis: Diese Funktion wird nur aufgerufen, wenn EMAIL_ENABLED=on ist.
+
+    startmeldung: optionaler Text, der am Anfang der E-Mail eingefuegt wird (z.B. beim Start).
     """
     # Ohne konfigurierte Zugangsdaten (env-Datei fehlt/unvollstaendig) gar nicht erst
     # versuchen zu senden - sonst gaebe es bei jedem E-Mail-Intervall einen Login-Fehler im Log.
@@ -503,7 +506,9 @@ def sende_status_email(csv_logger: CsvLogger, messwerte_letzte_stunde: list) -> 
     nachricht["From"] = EMAIL_ABSENDER
     nachricht["To"] = ", ".join(EMAIL_EMPFAENGER)
     nachricht["Subject"] = f"{EMAIL_BETREFF_PREFIX} - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-    nachricht.attach(MIMEText(zusammenfassung, "plain", "utf-8"))
+    # Startmeldung (falls vorhanden) vor die Zusammenfassung stellen
+    body = (f"{startmeldung}\n\n" if startmeldung else "") + zusammenfassung
+    nachricht.attach(MIMEText(body, "plain", "utf-8"))
 
     try:
         anhang_pfad = csv_logger.aktuelle_datei
@@ -725,10 +730,19 @@ def main() -> None:
     sollwert_timer = Intervall(TAGO_SOLLWERT_INTERVALL_SEK)
     csv_timer = Intervall(CSV_SCHREIB_INTERVALL_SEK)
     tago_push_timer = Intervall(TAGO_PUSH_INTERVALL_SEK)
-    # E-Mail bewusst NICHT sofort beim Start senden: sonst kaeme nach jedem
-    # (Neu-)Start eine Zusammenfassung mit nur einem Messpunkt. Das Intervall wird
-    # aus /etc/kuehlungssteuerung.env gelesen (EMAIL_INTERVALL_MIN, Default: 60 min).
+    # Naechste regulaere Status-E-Mail erst nach EMAIL_INTERVALL_MIN (nicht sofort),
+    # da beim Start bereits eine separate Start-E-Mail verschickt wird.
     email_timer = Intervall(EMAIL_INTERVALL_SEK, sofort_faellig=False)
+
+    # Start-E-Mail sofort senden (unabhaengig vom regulaeren Intervall)
+    if EMAIL_ENABLED:
+        try:
+            sende_status_email(
+                csv_logger, [],
+                startmeldung="Kuehlungssteuerung wurde so eben gestartet."
+            )
+        except Exception as exc:
+            logger.error("Start-E-Mail konnte nicht gesendet werden: %s", exc)
 
     try:
         # Ablauf eines Zyklus:
