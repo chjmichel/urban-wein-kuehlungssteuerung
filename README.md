@@ -3,7 +3,7 @@
 Weinkühlungssteuerung für einen Raspberry Pi (getestet auf Pi 4, Raspberry Pi OS
 Bookworm). Das Programm liest zwei DS18B20-Temperatursensoren aus und schaltet über
 zwei Relais die Kühlpumpen zweier Kreisläufe – geregelt per Hysterese. Zusätzlich
-werden die Messwerte protokolliert (CSV), stündlich per E-Mail versendet und an ein
+werden die Messwerte protokolliert (CSV), per E-Mail versendet und an ein
 Tago.io-Dashboard gesendet, von dem aus sich die Sollwerte fernsteuern lassen.
 
 ## Funktionsüberblick
@@ -14,9 +14,9 @@ Tago.io-Dashboard gesendet, von dem aus sich die Sollwerte fernsteuern lassen.
 - **Hysterese-Regelung**: pro Kreislauf getrennte Ein-/Ausschaltschwelle (Totband),
   damit die Pumpen nicht ständig takten.
 - **CSV-Logging**: eine Datei pro Tag (`daten/messungen_YYYY-MM-DD.csv`); Dateien
-  älter als `CSV_ROTATIONS_TAGE` (28 Tage) werden automatisch gelöscht.
-- **Status-E-Mail**: stündlich, mit Zusammenfassung der letzten Stunde und aktueller
-  CSV als Anhang.
+  älter als `CSV_ROTATIONS_TAGE` werden automatisch gelöscht (konfigurierbar, Default 28 Tage).
+- **Status-E-Mail**: beim Start (60 s verzögert, inkl. Systemlog) und danach im
+  konfigurierbaren Intervall (`EMAIL_INTERVALL_MIN`); kann per `EMAIL_ENABLED` deaktiviert werden.
 - **Tago.io**: Push der Messwerte + aktiver Schwellwerte; Abruf neuer Sollwerte aus
   dem Dashboard (Fernsteuerung ohne Neustart).
 
@@ -143,9 +143,6 @@ Feste Parameter stehen gesammelt im Abschnitt `CONFIG` in
 | `RELAIS_1_GPIO`, `RELAIS_2_GPIO` | GPIO-Pins der Relais (23 / 24). |
 | `RELAIS_ACTIVE_HIGH` | `False` für active-low-Platinen (LOW = an). |
 | `TEMP1/2_SCHWELLE_AN`, `..._AUS` | Ein-/Ausschaltschwellen der Hysterese (AUS < AN!). |
-| `CSV_SCHREIB_INTERVALL_SEK` | CSV-Schreibtakt (fix 5 min). |
-| `EMAIL_INTERVALL_SEK` | E-Mail-Takt (fix 1 h). |
-| `CSV_ROTATIONS_TAGE` | Aufbewahrungsdauer der CSV-Dateien (28 Tage). |
 | `TAGO_API_URL` | Region muss zum Account passen: US `api.tago.io`, EU `api.eu-w1.tago.io`. |
 
 ### Hysterese
