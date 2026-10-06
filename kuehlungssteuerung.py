@@ -821,7 +821,7 @@ def main() -> None:
                 if erfolg:
                     stunden_puffer = []
 
-            # Start-E-Mail: einmalig 60 s nach dem Start, mit journalctl-Ausgabe
+            # Start-E-Mail: einmalig 60 s nach dem Start, mit journalctl- und WLAN-Ausgabe
             if EMAIL_ENABLED and not start_email_gesendet and start_email_timer.faellig():
                 try:
                     journal = subprocess.run(
@@ -829,10 +829,27 @@ def main() -> None:
                         capture_output=True, text=True, timeout=10
                     )
                     journal_text = journal.stdout if journal.returncode == 0 else "(journalctl nicht verfuegbar)"
+
+                    iwconfig = subprocess.run(
+                        ["iwconfig", "wlan0"],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    iwconfig_text = iwconfig.stdout if iwconfig.returncode == 0 else "(iwconfig nicht verfuegbar)"
+
+                    nmcli_wifi = subprocess.run(
+                        ["nmcli", "device", "wifi"],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    nmcli_text = nmcli_wifi.stdout if nmcli_wifi.returncode == 0 else "(nmcli nicht verfuegbar)"
+
                     sende_status_email(
                         csv_logger, stunden_puffer,
                         startmeldung=(
                             "Kuehlungssteuerung wurde so eben gestartet.\n\n"
+                            "--- WLAN Status ---\n"
+                            f"{iwconfig_text}\n"
+                            "--- WLAN Netzwerke (Signalstaerke) ---\n"
+                            f"{nmcli_text}\n"
                             "--- Systemlog (letzte 60 Zeilen) ---\n"
                             f"{journal_text}"
                         )
