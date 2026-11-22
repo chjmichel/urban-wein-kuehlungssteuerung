@@ -88,10 +88,13 @@ SENSOR_2_ID = "28-000000cb40fb"
 GPIO_CHIP = 0       # gpiochip-Index (auf Pi 4/Zero i.d.R. 0; entspricht "gpioset -c 0 ...")
 RELAIS_1_GPIO = 23  # TODO: ggf. anpassen
 RELAIS_2_GPIO = 24  # TODO: ggf. anpassen
-# Viele Relaisplatinen (v.a. mit Optokoppler) schalten "active low": GPIO LOW = an.
-# Fuer solche Platinen muss dieser Wert False sein, sonst sind Anzeige und
-# physischer Schaltzustand invertiert. Nur bei "active high"-Platinen auf True.
-RELAIS_ACTIVE_HIGH = False
+# GPIO-Pegel fuer den Zustand "Kuehlung an":
+#   RELAIS_ACTIVE_HIGH = True  -> "an" = GPIO HIGH
+#   RELAIS_ACTIVE_HIGH = False -> "an" = GPIO LOW (typische active-low-Optokoppler-Platine)
+# Diese Platine (IDUINO 4R1B): LED leuchtet bei GPIO HIGH. Mit dem Verbraucher auf
+# der NC-Klemme laufen LED und Kuehler nur dann gleich, wenn "an" = GPIO HIGH ist
+# -> daher hier True. (Verbraucher MUSS auf NC liegen, nicht NO.)
+RELAIS_ACTIVE_HIGH = True
 # Diagnose: bei True wird nach jedem Schaltvorgang der physische GPIO-Zustand
 # (gpio_read + "pinctrl get") mitgeloggt. Nur zum Debuggen einschalten - im
 # Dauerbetrieb erzeugt es Log-Rauschen und startet je Schaltung einen Subprozess.
