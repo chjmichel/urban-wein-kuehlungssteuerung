@@ -3,20 +3,21 @@
 Weinkuehlungssteuerung fuer Raspberry Pi (getestet auf Pi 4, Raspberry Pi OS Bookworm).
 
 Liest zyklisch zwei DS18B20 1-Wire Temperatursensoren aus und schaltet zwei Relais
-ueber GPIO (Hysterese-Regelung). Die GPIO-Ansteuerung erfolgt ueber lgpio (dieselbe
-libgpiod-Schnittstelle wie das Kommandozeilen-Tool "gpioset"). Zusaetzlich:
+ueber GPIO (Schaltdifferenz-Regelung/Hysterese). Die GPIO-Ansteuerung erfolgt ueber
+lgpio (dieselbe libgpiod-Schnittstelle wie das Kommandozeilen-Tool "gpioset").
+Zusaetzlich:
   - schreibt regelmaessig einen Datensatz in eine tagesweise rotierende CSV-Datei
     (alte Dateien werden nach CSV_ROTATIONS_TAGE automatisch geloescht),
   - verschickt beim Start (60 s verzoegert, inkl. WLAN-Status, Signalstaerke und
     Systemlog) und danach im konfigurierbaren Intervall eine Statusmail inkl.
     aktueller CSV als Anhang (Intervall und Ein/Aus konfigurierbar ueber
     EMAIL_INTERVALL_MIN / EMAIL_ENABLED),
-  - pusht die Messwerte und aktiven Schwellwerte an ein Tago.io-Dashboard und
-    holt von dort per Fernsteuerung neue Schwellwerte (Sollwerte).
+  - pusht die Messwerte und aktiven Sollwerte an ein Tago.io-Dashboard und
+    holt von dort per Fernsteuerung neue Sollwerte und Schaltdifferenz.
 
-Alle anpassbaren Werte (Sensor-IDs, GPIOs, Schwellwerte, SMTP- und Tago-Zugangsdaten)
-stehen gesammelt im Abschnitt CONFIG. Zusaetzlich werden Zugangsdaten und Schalter
-aus der Datei /etc/kuehlungssteuerung.env gelesen (siehe unten).
+Alle anpassbaren Werte (Sensor-IDs, GPIOs, Sollwerte, SMTP- und Tago-Zugangsdaten)
+stehen gesammelt im Abschnitt CONFIG. Zusaetzlich werden Zugangsdaten, Schalter und
+Regelparameter aus der Datei /etc/kuehlungssteuerung.env gelesen (siehe unten).
 
 Umgebungsvariablen: Die Datei /etc/kuehlungssteuerung.env liegt ausserhalb des
 Repos (kein Git) und wird von der systemd-Unit ueber "EnvironmentFile=" eingelesen.
@@ -24,7 +25,8 @@ Sie enthaelt u.a.:
   SMTP_SERVER, SMTP_PORT, SMTP_USE_SSL, SMTP_LOGIN, SMTP_PASSWORT,
   EMAIL_ABSENDER, EMAIL_EMPFAENGER, EMAIL_INTERVALL_MIN, EMAIL_ENABLED,
   CSV_SCHREIB_INTERVALL_MIN, CSV_ROTATIONS_TAGE,
-  TAGO_DEVICE_TOKEN
+  TAGO_DEVICE_TOKEN,
+  TEMP1_SOLLWERT, TEMP2_SOLLWERT, SCHALTDIFFERENZ
 sowie optionale Schalter:
   TEST_MODUS=true/false      -> schnelle Reaktionsintervalle (~1 min) zum Testen
                                 (Default: false, dann 5 Minuten im Normalbetrieb)
@@ -92,11 +94,12 @@ RELAIS_ACTIVE_HIGH = False
 # Wird aus der Umgebung gelesen (z.B. RELAIS_DEBUG=true in /etc/kuehlungssteuerung.env).
 RELAIS_DEBUG = os.environ.get("RELAIS_DEBUG", "false").strip().lower() in ("1", "true", "yes", "ja")
 
-# --- Regel-Logik (Platzhalter, bitte an eigene Anforderungen anpassen) ------
-TEMP1_SCHWELLE_AN = 16.5   # Relais 1 einschalten, wenn Temp1 > diesem Wert
-TEMP1_SCHWELLE_AUS = 15.5  # Relais 1 ausschalten, wenn Temp1 < diesem Wert (Hysterese)
-TEMP2_SCHWELLE_AN = 16.5   # Relais 2 einschalten, wenn Temp2 > diesem Wert
-TEMP2_SCHWELLE_AUS = 15.5  # Relais 2 ausschalten, wenn Temp2 < diesem Wert (Hysterese)
+# --- Regel-Logik -----------------------------------------------------------
+# Werte koennen in /etc/kuehlungssteuerung.env gesetzt werden (kein Neustart
+# des Programms noetig, nur "sudo systemctl restart kuehlungssteuerung").
+TEMP1_SOLLWERT  = float(os.environ.get("TEMP1_SOLLWERT",  "16.0").split("#")[0].strip())  # Zieltemperatur Sensor 1
+TEMP2_SOLLWERT  = float(os.environ.get("TEMP2_SOLLWERT",  "16.0").split("#")[0].strip())  # Zieltemperatur Sensor 2
+SCHALTDIFFERENZ = float(os.environ.get("SCHALTDIFFERENZ", "0.5" ).split("#")[0].strip())  # Ein-/Ausschaltabstand in °C (Hysterese)
 
 # --- Zeitintervalle ----------------------------------------------------------
 # TEST_MODUS (aus der Umgebung, z.B. TEST_MODUS=true in /etc/kuehlungssteuerung.env)
@@ -196,17 +199,16 @@ TAGO_PUSH_INTERVALL_SEK = _REAKTION_SEK  # wie oft an Tago gesendet wird (TEST_M
 TAGO_TIMEOUT_SEK = 30                   # Netzwerk-Timeout (WLAN-Verlust abfangen)
 
 # --- Tago.io Sollwert-Fernsteuerung -------------------------------------------
-# Die Schwellwerte koennen aus der Ferne ueber Tago.io gesetzt werden. Dazu im
-# Tago-Dashboard je ein Eingabe-Widget (z.B. "Input Form" oder "Slider") anlegen,
-# das in die unten genannten Variablen des Devices schreibt. Der Pi holt diese
-# Werte regelmaessig ab. Die Werte in der CONFIG oben dienen als Startwerte,
-# solange in Tago noch kein Sollwert gesetzt wurde.
+# Sollwerte und Schaltdifferenz koennen aus der Ferne ueber Tago.io gesetzt werden.
+# Dazu im Tago-Dashboard je ein Eingabe-Widget (z.B. "Input Form" oder "Slider")
+# anlegen, das in die unten genannten Variablen des Devices schreibt. Der Pi holt
+# diese Werte regelmaessig ab. Die Werte aus CONFIG/env dienen als Startwerte,
+# solange in Tago noch nichts gesetzt wurde.
 TAGO_SOLLWERTE_AKTIV = True             # auf False setzen, um die Fernsteuerung abzuschalten
 TAGO_SOLLWERT_INTERVALL_SEK = _REAKTION_SEK  # wie oft Sollwerte von Tago geholt werden (TEST_MODUS: 60 s, sonst 5 min)
-TAGO_VAR_SW_AN_1 = "sollwert_an_1"      # Variablenname im Dashboard fuer Einschaltschwelle Sensor 1
-TAGO_VAR_SW_AUS_1 = "sollwert_aus_1"    # Ausschaltschwelle Sensor 1
-TAGO_VAR_SW_AN_2 = "sollwert_an_2"      # Einschaltschwelle Sensor 2
-TAGO_VAR_SW_AUS_2 = "sollwert_aus_2"    # Ausschaltschwelle Sensor 2
+TAGO_VAR_SOLLWERT_1 = "sollwert_1"      # Variablenname im Dashboard fuer Zieltemperatur Sensor 1
+TAGO_VAR_SOLLWERT_2 = "sollwert_2"      # Zieltemperatur Sensor 2
+TAGO_VAR_SCHALTDIFFERENZ = "schaltdifferenz"  # Schaltdifferenz (Hysterese) fuer beide Sensoren
 
 # --------------------------------------------------------------------------- #
 # Logging Setup
@@ -569,10 +571,9 @@ def sende_an_tago(temp1: Optional[float], temp2: Optional[float],
 
     # Aktuell angewendete Schwellwerte zurueckmelden (fuer Anzeige-Widgets im Dashboard).
     if schwellen is not None:
-        nutzlast.append({"variable": "aktiv_an_1", "value": schwellen["an1"], "unit": "C"})
-        nutzlast.append({"variable": "aktiv_aus_1", "value": schwellen["aus1"], "unit": "C"})
-        nutzlast.append({"variable": "aktiv_an_2", "value": schwellen["an2"], "unit": "C"})
-        nutzlast.append({"variable": "aktiv_aus_2", "value": schwellen["aus2"], "unit": "C"})
+        nutzlast.append({"variable": "aktiv_sollwert_1", "value": schwellen["sollwert1"], "unit": "C"})
+        nutzlast.append({"variable": "aktiv_sollwert_2", "value": schwellen["sollwert2"], "unit": "C"})
+        nutzlast.append({"variable": "aktiv_schaltdifferenz", "value": schwellen["schaltdifferenz"], "unit": "C"})
 
     try:
         import requests  # lazy import, damit das Skript ohne die Lib startbar bleibt
@@ -622,11 +623,25 @@ def _tago_letzter_wert(requests_modul, variable: str) -> Optional[float]:
         return None
 
 
-def hole_sollwerte_von_tago(schwellen: dict) -> dict:
-    """Aktualisiert die Schwellwerte aus dem Tago-Dashboard.
+def _schwellen_berechnen(sollwert1: float, sollwert2: float, schaltdifferenz: float) -> dict:
+    """Berechnet AN/AUS-Schwellen symmetrisch um den jeweiligen Sollwert."""
+    h = schaltdifferenz / 2
+    return {
+        "sollwert1": sollwert1,
+        "sollwert2": sollwert2,
+        "schaltdifferenz": schaltdifferenz,
+        "an1":  sollwert1 + h,
+        "aus1": sollwert1 - h,
+        "an2":  sollwert2 + h,
+        "aus2": sollwert2 - h,
+    }
 
-    Uebernimmt nur gueltige Werte und stellt sicher, dass pro Sensor AUS < AN
-    bleibt (Hysterese). Bei Fehlern/fehlenden Werten bleiben die bisherigen
+
+def hole_sollwerte_von_tago(schwellen: dict) -> dict:
+    """Aktualisiert Sollwerte und Hysterese aus dem Tago-Dashboard.
+
+    Liest Zieltemperaturen und Hysterese; AN/AUS-Schwellen werden daraus
+    berechnet. Bei Fehlern/fehlenden Werten bleiben die bisherigen
     Schwellwerte unveraendert.
     """
     if not TAGO_SOLLWERTE_AKTIV:
@@ -638,31 +653,25 @@ def hole_sollwerte_von_tago(schwellen: dict) -> dict:
         logger.error("Tago-Sollwerte: Bibliothek 'requests' nicht installiert (sudo apt install python3-requests)")
         return schwellen
 
-    zuordnung = {
-        "an1": TAGO_VAR_SW_AN_1,
-        "aus1": TAGO_VAR_SW_AUS_1,
-        "an2": TAGO_VAR_SW_AN_2,
-        "aus2": TAGO_VAR_SW_AUS_2,
-    }
-    neu = dict(schwellen)
-    for schluessel, variable in zuordnung.items():
-        wert = _tago_letzter_wert(requests, variable)
-        if wert is not None:
-            neu[schluessel] = wert
+    sollwert1       = _tago_letzter_wert(requests, TAGO_VAR_SOLLWERT_1)
+    sollwert2       = _tago_letzter_wert(requests, TAGO_VAR_SOLLWERT_2)
+    schaltdifferenz = _tago_letzter_wert(requests, TAGO_VAR_SCHALTDIFFERENZ)
 
-    # Hysterese-Invariante pro Sensor pruefen: AUS muss unter AN liegen.
-    for sensor, aus_key, an_key in (("Sensor1", "aus1", "an1"), ("Sensor2", "aus2", "an2")):
-        if neu[aus_key] >= neu[an_key]:
-            logger.error(
-                "%s: ungueltige Tago-Sollwerte (AUS %.2f >= AN %.2f), behalte bisherige Werte",
-                sensor, neu[aus_key], neu[an_key],
-            )
-            neu[aus_key] = schwellen[aus_key]
-            neu[an_key] = schwellen[an_key]
+    neu_s1 = sollwert1       if sollwert1       is not None else schwellen["sollwert1"]
+    neu_s2 = sollwert2       if sollwert2       is not None else schwellen["sollwert2"]
+    neu_sd = schaltdifferenz if schaltdifferenz is not None else schwellen["schaltdifferenz"]
+
+    if neu_sd <= 0:
+        logger.error("Tago-Schaltdifferenz ungueltig (%.2f), behalte bisherigen Wert %.2f", neu_sd, schwellen["schaltdifferenz"])
+        neu_sd = schwellen["schaltdifferenz"]
+
+    neu = _schwellen_berechnen(neu_s1, neu_s2, neu_sd)
 
     if neu != schwellen:
         logger.info(
-            "Schwellwerte aktualisiert (Tago): S1 AN=%.2f AUS=%.2f | S2 AN=%.2f AUS=%.2f",
+            "Schwellwerte aktualisiert (Tago): S1 Soll=%.2f | S2 Soll=%.2f | Schaltdifferenz=%.2f"
+            " -> S1 AN=%.2f AUS=%.2f | S2 AN=%.2f AUS=%.2f",
+            neu["sollwert1"], neu["sollwert2"], neu["schaltdifferenz"],
             neu["an1"], neu["aus1"], neu["an2"], neu["aus2"],
         )
     return neu
@@ -714,18 +723,13 @@ def main() -> None:
 
     stunden_puffer: list = []  # Messwerte seit der letzten E-Mail, fuer die Zusammenfassung
     # Startzustand je Sensor getrennt setzen: ein dauerhaft defekter Sensor darf den
-    # anderen (funktionierenden) Kanal nicht im hysteresefreien Startmodus festhalten.
+    # anderen (funktionierenden) Kanal nicht im schaltdifferenzfreien Startmodus festhalten.
     erster_durchlauf_1 = True
     erster_durchlauf_2 = True
 
     # Schwellwerte zur Laufzeit halten (Startwerte aus CONFIG). Werden ggf. per
     # Tago.io-Fernsteuerung aktualisiert, ohne das Programm neu zu starten.
-    schwellen = {
-        "an1": TEMP1_SCHWELLE_AN,
-        "aus1": TEMP1_SCHWELLE_AUS,
-        "an2": TEMP2_SCHWELLE_AN,
-        "aus2": TEMP2_SCHWELLE_AUS,
-    }
+    schwellen = _schwellen_berechnen(TEMP1_SOLLWERT, TEMP2_SOLLWERT, SCHALTDIFFERENZ)
 
     # monotone Referenzzeit verwenden, damit Systemzeitsprünge (NTP) die
     # Intervalle nicht durcheinanderbringen

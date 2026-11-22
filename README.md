@@ -11,15 +11,15 @@ Tago.io-Dashboard gesendet, von dem aus sich die Sollwerte fernsteuern lassen.
 - **Temperaturmessung**: zwei DS18B20 1-Wire-Sensoren über das sysfs-Kernelinterface.
 - **Relaissteuerung**: zwei Relais über GPIO, angesteuert mit **lgpio** (dieselbe
   libgpiod-Schnittstelle wie das Kommandozeilen-Tool `gpioset`).
-- **Hysterese-Regelung**: pro Kreislauf getrennte Ein-/Ausschaltschwelle (Totband),
-  damit die Pumpen nicht ständig takten.
+- **Hysterese-Regelung**: pro Kreislauf ein Sollwert mit konfigurierbarer
+  Schaltdifferenz (Hysterese), damit die Pumpen nicht ständig takten.
 - **CSV-Logging**: eine Datei pro Tag (`daten/messungen_YYYY-MM-DD.csv`); Dateien
   älter als `CSV_ROTATIONS_TAGE` werden automatisch gelöscht (konfigurierbar, Default 28 Tage).
 - **Status-E-Mail**: beim Start (60 s verzögert, inkl. WLAN-Status, Signalstärke und
   Systemlog) und danach im konfigurierbaren Intervall (`EMAIL_INTERVALL_MIN`);
   kann per `EMAIL_ENABLED` deaktiviert werden.
-- **Tago.io**: Push der Messwerte + aktiver Schwellwerte; Abruf neuer Sollwerte aus
-  dem Dashboard (Fernsteuerung ohne Neustart).
+- **Tago.io**: Push der Messwerte + aktiver Sollwerte und Schaltdifferenz; Abruf
+  neuer Werte aus dem Dashboard (Fernsteuerung ohne Neustart).
 
 ## Hardware
 
@@ -106,6 +106,11 @@ CSV_SCHREIB_INTERVALL_MIN=5
 # Aufbewahrungsdauer in Tagen, default: 28
 CSV_ROTATIONS_TAGE=28
 
+#Regelparameter (Defaults: 16.0 / 16.0 / 0.5)
+TEMP1_SOLLWERT=16.0
+TEMP2_SOLLWERT=16.0
+SCHALTDIFFERENZ=0.5
+
 #Test und Debugging
 # zum Ein-/Ausschalten: true/false, schnelle Reaktionsintervalle zum Testen
 TEST_MODUS=true
@@ -126,6 +131,9 @@ RELAIS_DEBUG=true
 | `CSV_SCHREIB_INTERVALL_MIN` | CSV-Schreibtakt in Minuten (Default: 5). |
 | `CSV_ROTATIONS_TAGE` | Aufbewahrungsdauer der CSV-Dateien in Tagen (Default: 28). |
 | `TAGO_DEVICE_TOKEN` | Device-Token des Tago.io-Geräts. |
+| `TEMP1_SOLLWERT` | Zieltemperatur Sensor 1 in °C (Default: 16.0). |
+| `TEMP2_SOLLWERT` | Zieltemperatur Sensor 2 in °C (Default: 16.0). |
+| `SCHALTDIFFERENZ` | Abstand zwischen Ein- und Ausschaltschwelle in °C, auch Hysterese genannt (Default: 0.5). |
 | `TEST_MODUS` | `true` → Mess-/Sollwert-/Push-Intervall 60 s statt 5 min. |
 | `RELAIS_DEBUG` | `true` → physischen GPIO-Zustand nach jedem Schalten loggen. |
 
@@ -143,15 +151,23 @@ Feste Parameter stehen gesammelt im Abschnitt `CONFIG` in
 | `GPIO_CHIP` | gpiochip-Index (Pi 4/Zero i. d. R. `0`, entspricht `gpioset -c 0 ...`). |
 | `RELAIS_1_GPIO`, `RELAIS_2_GPIO` | GPIO-Pins der Relais (23 / 24). |
 | `RELAIS_ACTIVE_HIGH` | `False` für active-low-Platinen (LOW = an). |
-| `TEMP1/2_SCHWELLE_AN`, `..._AUS` | Ein-/Ausschaltschwellen der Hysterese (AUS < AN!). |
+| `TEMP1_SOLLWERT`, `TEMP2_SOLLWERT` | Zieltemperaturen der beiden Kreisläufe (Default-Werte, überschreibbar per env). |
+| `SCHALTDIFFERENZ` | Ein-/Ausschaltabstand um den Sollwert in °C (Hysterese, Default-Wert, überschreibbar per env). |
 | `TAGO_API_URL` | Region muss zum Account passen: US `api.tago.io`, EU `api.eu-w1.tago.io`. |
 
-### Hysterese
+### Schaltdifferenz (Hysterese)
 
-Pro Kreislauf gilt: **einschalten**, wenn die Temperatur über die AN-Schwelle steigt;
-**ausschalten**, wenn sie unter die AUS-Schwelle fällt. Dazwischen (im Totband) bleibt
-der Zustand unverändert. Es muss immer `AUS < AN` gelten – ungültige Sollwerte aus
-Tago werden verworfen und die bisherigen behalten.
+Pro Kreislauf gilt: **einschalten**, wenn die Temperatur den Sollwert um die halbe
+Schaltdifferenz überschreitet; **ausschalten**, wenn sie ihn um die halbe
+Schaltdifferenz unterschreitet. Beispiel mit `TEMP1_SOLLWERT=16.0` und
+`SCHALTDIFFERENZ=0.5`:
+
+- Einschalten bei > 16,25 °C
+- Ausschalten bei < 15,75 °C
+
+Dazwischen bleibt der Zustand unverändert. Die Schaltdifferenz kann auch über
+Tago.io (Variable `schaltdifferenz`) ferngesteuert werden; ungültige Werte (≤ 0)
+werden verworfen.
 
 ## Betrieb & Fehlersuche
 
