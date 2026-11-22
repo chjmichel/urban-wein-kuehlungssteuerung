@@ -134,7 +134,9 @@ RELAIS_DEBUG=true
 | `TEMP1_SOLLWERT` | Zieltemperatur Sensor 1 in °C (Default: 16.0). |
 | `TEMP2_SOLLWERT` | Zieltemperatur Sensor 2 in °C (Default: 16.0). |
 | `SCHALTDIFFERENZ` | Abstand zwischen Ein- und Ausschaltschwelle in °C, auch Hysterese genannt (Default: 0.5). |
-| `TEST_MODUS` | `true` → Mess-/Sollwert-/Push-Intervall 60 s statt 5 min. |
+| `MESS_INTERVALL_SEK` | Sekunden zwischen zwei Sensor-Lesungen und Relais-Checks (Default: 10). |
+| `TAGO_SOLLWERT_PULL_SEK` | Sekunden zwischen zwei Sollwert-Abfragen von Tago (Default: 30). |
+| `TEST_MODUS` | `true` → Tago-Push-Intervall 60 s statt 5 min. |
 | `RELAIS_DEBUG` | `true` → physischen GPIO-Zustand nach jedem Schalten loggen. |
 
 Ohne konfigurierte SMTP-Daten wird der E-Mail-Versand übersprungen (kein Fehler);

@@ -30,6 +30,10 @@ Sie enthaelt u.a.:
 sowie optionale Schalter:
   TEST_MODUS=true/false      -> schnelle Reaktionsintervalle (~1 min) zum Testen
                                 (Default: false, dann 5 Minuten im Normalbetrieb)
+  MESS_INTERVALL_SEK=10      -> Sekunden zwischen zwei Sensor-Lesungen und Relais-Checks
+                                (Default: 10 s)
+  TAGO_SOLLWERT_PULL_SEK=30  -> Sekunden zwischen zwei Sollwert-Abfragen von Tago
+                                (Default: 30 s)
   RELAIS_DEBUG=true/false    -> nach jedem Schaltvorgang physischen GPIO-Zustand
                                 (gpio_read + pinctrl) ins Log schreiben (Default: false)
 
@@ -111,9 +115,14 @@ SCHALTDIFFERENZ = float(os.environ.get("SCHALTDIFFERENZ", "0.5" ).split("#")[0].
 # /etc/kuehlungssteuerung.env gelesen; int-Werte tolerieren Inline-Kommentare nicht
 # (systemd uebergibt sie als Teil des Wertes) - daher split("#") als Schutz.
 TEST_MODUS = os.environ.get("TEST_MODUS", "false").strip().lower() in ("1", "true", "yes", "ja")
-_REAKTION_SEK = 60 if TEST_MODUS else 5 * 60
+_REAKTION_SEK = 60 if TEST_MODUS else 5 * 60  # Basis fuer Tago-Push-Intervall
 
-MESS_INTERVALL_SEK = _REAKTION_SEK          # wie oft die Sensoren gelesen werden
+# Mess- und Sollwert-Intervall unabhaengig konfigurierbar (env), damit die Relais
+# schnell reagieren, ohne den Tago-Push-Takt zu erhoehen.
+# Default: 10 s (genuegt fuer schnelle Reaktion; DS18B20 braucht ~1 s je Messung).
+MESS_INTERVALL_SEK = int(os.environ.get("MESS_INTERVALL_SEK", "10").split("#")[0].strip())
+# Wie oft neue Sollwerte von Tago geholt werden (Default: 30 s).
+TAGO_SOLLWERT_PULL_SEK = int(os.environ.get("TAGO_SOLLWERT_PULL_SEK", "30").split("#")[0].strip())
 CSV_SCHREIB_INTERVALL_MIN = int(os.environ.get("CSV_SCHREIB_INTERVALL_MIN", "5").split("#")[0].strip())  # aus env in Minuten
 CSV_SCHREIB_INTERVALL_SEK = CSV_SCHREIB_INTERVALL_MIN * 60  # intern in Sekunden
 CSV_ROTATIONS_TAGE = int(os.environ.get("CSV_ROTATIONS_TAGE", "28").split("#")[0].strip())  # Aufbewahrungsdauer in Tagen
@@ -205,7 +214,7 @@ TAGO_TIMEOUT_SEK = 30                   # Netzwerk-Timeout (WLAN-Verlust abfange
 # diese Werte regelmaessig ab. Die Werte aus CONFIG/env dienen als Startwerte,
 # solange in Tago noch nichts gesetzt wurde.
 TAGO_SOLLWERTE_AKTIV = True             # auf False setzen, um die Fernsteuerung abzuschalten
-TAGO_SOLLWERT_INTERVALL_SEK = _REAKTION_SEK  # wie oft Sollwerte von Tago geholt werden (TEST_MODUS: 60 s, sonst 5 min)
+TAGO_SOLLWERT_INTERVALL_SEK = TAGO_SOLLWERT_PULL_SEK  # wie oft Sollwerte von Tago geholt werden (konfigurierbar, Default 30 s)
 TAGO_VAR_SOLLWERT_1 = "sollwert_1"      # Variablenname im Dashboard fuer Zieltemperatur Sensor 1
 TAGO_VAR_SOLLWERT_2 = "sollwert_2"      # Zieltemperatur Sensor 2
 TAGO_VAR_SCHALTDIFFERENZ = "schaltdifferenz"  # Schaltdifferenz (Hysterese) fuer beide Sensoren
