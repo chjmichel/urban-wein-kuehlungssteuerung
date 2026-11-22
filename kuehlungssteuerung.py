@@ -28,8 +28,9 @@ Sie enthaelt u.a.:
   TAGO_DEVICE_TOKEN,
   TEMP1_SOLLWERT, TEMP2_SOLLWERT, SCHALTDIFFERENZ
 sowie optionale Schalter:
-  TEST_MODUS=true/false      -> schnelle Reaktionsintervalle (~1 min) zum Testen
-                                (Default: false, dann 5 Minuten im Normalbetrieb)
+  TEST_MODUS=true/false      -> verkuerzt NUR das Tago-Push-Intervall auf 60 s
+                                (Default: false = 5 Minuten). Messen und Sollwert-
+                                Abruf haengen an eigenen Werten (siehe unten).
   MESS_INTERVALL_SEK=10      -> Sekunden zwischen zwei Sensor-Lesungen und Relais-Checks
                                 (Default: 10 s)
   TAGO_SOLLWERT_PULL_SEK=30  -> Sekunden zwischen zwei Sollwert-Abfragen von Tago
@@ -110,9 +111,9 @@ SCHALTDIFFERENZ = float(os.environ.get("SCHALTDIFFERENZ", "0.5" ).split("#")[0].
 
 # --- Zeitintervalle ----------------------------------------------------------
 # TEST_MODUS (aus der Umgebung, z.B. TEST_MODUS=true in /etc/kuehlungssteuerung.env)
-# schaltet die drei "Reaktionsintervalle" auf schnelle 60 s, damit Aenderungen im
-# Dashboard beim Testen zuegig sichtbar werden. Ohne TEST_MODUS gelten die schonenden
-# 5 Minuten (weniger Sensor-/Netzlast, laengere SD-Karten-Lebensdauer).
+# verkuerzt NUR das Tago-Push-Intervall auf 60 s (sonst 5 min), damit beim Testen
+# haeufiger Daten im Dashboard landen. Mess- und Sollwert-Abruf-Takt sind davon
+# unabhaengig (MESS_INTERVALL_SEK / TAGO_SOLLWERT_PULL_SEK, siehe unten).
 #
 # CSV_SCHREIB_INTERVALL_MIN, CSV_ROTATIONS_TAGE und EMAIL_INTERVALL_MIN werden aus
 # /etc/kuehlungssteuerung.env gelesen; int-Werte tolerieren Inline-Kommentare nicht
@@ -174,8 +175,16 @@ LOG_LEVEL = logging.INFO
 #   # Aufbewahrungsdauer in Tagen, default: 28
 #   CSV_ROTATIONS_TAGE=28
 #
+#   #Regelung (Defaults: 16.0 / 16.0 / 0.5)
+#   TEMP1_SOLLWERT=16.0
+#   TEMP2_SOLLWERT=16.0
+#   SCHALTDIFFERENZ=0.5
+#   # Reaktionstakt in Sekunden (Defaults: 10 / 30)
+#   MESS_INTERVALL_SEK=10
+#   TAGO_SOLLWERT_PULL_SEK=30
+#
 #   #Test und Debugging
-#   # zum Ein-/Ausschalten: true/false, schnelle Reaktionsintervalle zum Testen
+#   # zum Ein-/Ausschalten: true/false, verkuerzt nur den Tago-Push-Takt auf 60 s
 #   TEST_MODUS=true
 #   # zum Ein-/Ausschalten: true/false, gpio_read + pinctrl werden geloggt
 #   RELAIS_DEBUG=true

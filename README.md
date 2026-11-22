@@ -24,9 +24,13 @@ Tago.io-Dashboard gesendet, von dem aus sich die Sollwerte fernsteuern lassen.
 ## Hardware
 
 - Raspberry Pi (getestet: Pi 4), Raspberry Pi OS Bookworm.
-- 2× DS18B20 1-Wire-Sensor (1-Wire per `raspi-config` bzw. `dtoverlay=w1-gpio` aktivieren).
-- 2× Relais an GPIO 23 und 24. Typische Optokoppler-Platinen schalten **active-low**
-  (GPIO LOW = Relais an) → `RELAIS_ACTIVE_HIGH = False`.
+- 2× DS18B20 1-Wire-Sensor (1-Wire per `raspi-config` bzw. `dtoverlay=w1-gpio` aktivieren),
+  4,7 kΩ Pull-up zwischen Datenleitung (GPIO 4) und 3,3 V.
+- 2× Relais an GPIO 23 und 24 (IDUINO 4R1B). Verbraucher auf der **NC**-Klemme,
+  dazu `RELAIS_ACTIVE_HIGH = True`. Diese Platine lässt die Kanal-LED bei GPIO HIGH
+  leuchten; nur in dieser Kombination (NC + active-high) leuchtet die LED, wenn der
+  Kühler läuft. (Bei Verbraucher auf **NO** stattdessen `RELAIS_ACTIVE_HIGH = False` —
+  dann sind LED und Kühler jedoch gegenläufig.)
 
 ## Installation / Deployment
 
@@ -110,9 +114,12 @@ CSV_ROTATIONS_TAGE=28
 TEMP1_SOLLWERT=16.0
 TEMP2_SOLLWERT=16.0
 SCHALTDIFFERENZ=0.5
+# Reaktionstakt in Sekunden (Defaults: 10 / 30)
+MESS_INTERVALL_SEK=10
+TAGO_SOLLWERT_PULL_SEK=30
 
 #Test und Debugging
-# zum Ein-/Ausschalten: true/false, schnelle Reaktionsintervalle zum Testen
+# zum Ein-/Ausschalten: true/false, verkürzt nur den Tago-Push-Takt auf 60 s
 TEST_MODUS=true
 # zum Ein-/Ausschalten: true/false, gpio_read + pinctrl werden geloggt
 RELAIS_DEBUG=true
@@ -152,7 +159,7 @@ Feste Parameter stehen gesammelt im Abschnitt `CONFIG` in
 | `SENSOR_1_ID`, `SENSOR_2_ID` | 1-Wire-IDs (`ls /sys/bus/w1/devices/`, beginnen mit `28-`). |
 | `GPIO_CHIP` | gpiochip-Index (Pi 4/Zero i. d. R. `0`, entspricht `gpioset -c 0 ...`). |
 | `RELAIS_1_GPIO`, `RELAIS_2_GPIO` | GPIO-Pins der Relais (23 / 24). |
-| `RELAIS_ACTIVE_HIGH` | `False` für active-low-Platinen (LOW = an). |
+| `RELAIS_ACTIVE_HIGH` | `True` = „an" ist GPIO HIGH (hier: Verbraucher auf NC). `False` = „an" ist GPIO LOW (Verbraucher auf NO, typische active-low-Platine). |
 | `TEMP1_SOLLWERT`, `TEMP2_SOLLWERT` | Zieltemperaturen der beiden Kreisläufe (Default-Werte, überschreibbar per env). |
 | `SCHALTDIFFERENZ` | Ein-/Ausschaltabstand um den Sollwert in °C (Hysterese, Default-Wert, überschreibbar per env). |
 | `TAGO_API_URL` | Region muss zum Account passen: US `api.tago.io`, EU `api.eu-w1.tago.io`. |
@@ -187,10 +194,16 @@ gpioget -c 0 23           # aktuellen Pegel lesen
 gpioset -c 0 23=1         # HIGH setzen (hält bis Strg+C)
 ```
 
-- **Relais schaltet nicht / falsch herum**: `RELAIS_ACTIVE_HIGH` prüfen; mit
-  `RELAIS_DEBUG=true` den physischen Pegel im Log gegenprüfen.
-- **Reaktion auf Dashboard-Änderung dauert lange**: im Normalbetrieb bis ~10 min
-  (5-min-Intervalle). Zum Testen `TEST_MODUS=true` setzen.
+- **Relais schaltet nicht / falsch herum**: `RELAIS_ACTIVE_HIGH` prüfen (muss zur
+  verwendeten Klemme passen: `True` = NC, `False` = NO); mit `RELAIS_DEBUG=true` den
+  physischen Pegel im Log gegenprüfen.
+- **LED leuchtet gegenläufig zum Kühler**: liegt an der Klemme. Auf dieser Platine
+  stimmen LED und Kühler nur bei **NC + `RELAIS_ACTIVE_HIGH=True`** überein.
+- **Sollwert-Änderung im Dashboard wirkt nicht**: prüfen, ob das Eingabe-Widget in
+  exakt die Variablen `sollwert_1`, `sollwert_2` bzw. `schaltdifferenz` schreibt
+  (und ins selbe Device). Im Log muss `Schwellwerte aktualisiert (Tago)` erscheinen.
+- **Reaktion auf Sollwert-Änderung dauert lange**: hängt an `TAGO_SOLLWERT_PULL_SEK`
+  (Default 30 s), nicht an `TEST_MODUS`. Kleineren Wert setzen für schnellere Reaktion.
 - **Keine E-Mail**: SMTP-Daten in der env-Datei prüfen; `EMAIL_EMPFAENGER` ohne
   Klammern/Anführungszeichen.
 - **`status=217/USER`**: der in der Unit angegebene Benutzer existiert nicht.
