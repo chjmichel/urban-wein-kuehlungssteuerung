@@ -723,9 +723,10 @@ def relais_logik_anwenden(temp: Optional[float], relais: RelaisController, schwe
 
 def main() -> None:
     logger.info("Kuehlungssteuerung startet")
-    logger.info("TEST_MODUS=%s -> Reaktionsintervall %d s (Messen/Sollwerte/Tago-Push); "
-                "CSV alle %d s, E-Mail alle %d s (EMAIL_ENABLED=%s)",
-                TEST_MODUS, _REAKTION_SEK, CSV_SCHREIB_INTERVALL_SEK, EMAIL_INTERVALL_SEK, EMAIL_ENABLED)
+    logger.info("Messen alle %d s, Sollwert-Abruf (Tago) alle %d s, Tago-Push alle %d s "
+                "(TEST_MODUS=%s); CSV alle %d s, E-Mail alle %d s (EMAIL_ENABLED=%s)",
+                MESS_INTERVALL_SEK, TAGO_SOLLWERT_INTERVALL_SEK, TAGO_PUSH_INTERVALL_SEK,
+                TEST_MODUS, CSV_SCHREIB_INTERVALL_SEK, EMAIL_INTERVALL_SEK, EMAIL_ENABLED)
 
     sensor1 = DS18B20Sensor(SENSOR_1_ID, "Sensor1")
     sensor2 = DS18B20Sensor(SENSOR_2_ID, "Sensor2")
